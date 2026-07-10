@@ -33,19 +33,22 @@
 
 ---
 
-## 📦 Установка и запуск
+### 📦 Установка и запуск
 
-### 1. Клонировать репозиторий
+## 1. Клонировать репозиторий
 
 ```bash
 git clone https://github.com/Narek-D8v/Nemesis-bot.git
 cd Nemesis-bot
-2. Установить зависимости
-bash
+```
+## 2. Установить зависимости
+```bash
 pip install -r requirements.txt
-3. Настроить окружение
-bash
+```
+## 3. Настроить окружение
+```bash
 cp .env.example .env
+```
 Отредактируйте .env и укажите:
 
 text
