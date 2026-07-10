@@ -35,6 +35,8 @@ MAT_LIST = [
     'подъеб', 'проеб', 'разъеб', 'съеб', 'уеб',
     'жопа', 'жоп', 'гандон', 'гнида', 'говно', 'говн',
     'мразь', 'тварь', 'урод', 'сволочь', 'падла',
+    'ёб', 'пёзд', 'хули', 'уёбок', 'еблан', 'ёбака', 'хуета',
+    'хуесос', 'хуеглот', 'заёб', 'проёб', 'наёбка', 'разёбанный',
 ]
 
 def has_url(text: str) -> bool:
@@ -49,6 +51,7 @@ def has_mention_all(text: str) -> bool:
 def normalize_text(text: str) -> str:
     result = []
     for ch in text:
+        ch = ch.replace('ё', 'е')
         result.append(HOMOGLYPH_MAP.get(ch, ch))
     return ''.join(result)
 
@@ -56,22 +59,50 @@ def has_mask(text: str) -> bool:
     normalized = normalize_text(text)
     return normalized != text
 
+def _strip_non_alpha(text: str) -> str:
+    return re.sub(r'[^a-zа-яё]', '', text.replace('ё', 'е'))
+
 def contains_mat(text: str, mat_list: list = None) -> bool:
     if mat_list is None:
         mat_list = MAT_LIST
     text_lower = text.lower()
-    normalized = normalize_text(text_lower)
+    text_stripped = _strip_non_alpha(text_lower)
+    normalized = normalize_text(text_stripped)
     for word in mat_list:
-        if word in text_lower or word in normalized:
+        if word in text_stripped:
+            return True
+        word_norm = normalize_text(word)
+        if word_norm and word_norm in normalized:
             return True
     return False
+
+def _word_to_pattern(word: str) -> str:
+    rev: dict[str, list[str]] = {}
+    for cyr, lat in HOMOGLYPH_MAP.items():
+        rev.setdefault(lat, []).append(cyr)
+    parts = []
+    for c in word:
+        homoglyphs = {c}
+        if c in HOMOGLYPH_MAP:
+            homoglyphs.add(HOMOGLYPH_MAP[c])
+        if c in rev:
+            homoglyphs.update(rev[c])
+        if c == 'ё':
+            homoglyphs.add('е')
+        elif c == 'е':
+            homoglyphs.add('ё')
+        if len(homoglyphs) > 1:
+            parts.append('[' + ''.join(re.escape(g) for g in homoglyphs) + ']')
+        else:
+            parts.append(re.escape(c))
+    return r'[\W_]*'.join(parts)
 
 def replace_mat(text: str, mat_list: list = None) -> str:
     if mat_list is None:
         mat_list = MAT_LIST
     result = text
-    for word in mat_list:
-        pattern = re.compile(re.escape(word), re.IGNORECASE)
+    for word in sorted(mat_list, key=len, reverse=True):
+        pattern = re.compile(_word_to_pattern(word), re.IGNORECASE)
         result = pattern.sub('*' * len(word), result)
     return result
 
