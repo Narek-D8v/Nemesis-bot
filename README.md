@@ -41,7 +41,9 @@ pip install -r requirements.txt
 cp .env.example .env
 # Заполнить .env токеном и ключами
 python main.py
-🌐 Документация
+```bash
+
+### 🌐 Документация
 [Открыть документацию команд](https://narek-d8v.github.io/Nemesis-bot-documentation/)
 
 🤝 Лицензия
