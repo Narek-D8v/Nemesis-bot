@@ -172,6 +172,7 @@ async def set_daily_rules_text(message: Message, state: FSMContext):
     settings = await db.get_settings(chat_id)
     settings.setdefault("daily_rules", {})["text"] = message.text
     await db.save_settings(chat_id, settings)
+    _pending_edits.pop(message.from_user.id, None)
     await state.clear()
     await message.answer(
         "✅ Текст правил обновлён!",
@@ -193,6 +194,7 @@ async def set_daily_rules_time(message: Message, state: FSMContext):
             settings = await db.get_settings(chat_id)
             settings.setdefault("daily_rules", {})["time"] = time_str
             await db.save_settings(chat_id, settings)
+            _pending_edits.pop(user_id, None)
             await state.clear()
             await message.answer(
                 f"✅ Время автопостинга: {time_str}",

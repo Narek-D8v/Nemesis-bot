@@ -23,7 +23,7 @@ from utils import (
     has_bot_command, esc,
 )
 from keyboards import (
-    captcha_correct_keyboard, greeting_menu, farewell_menu,
+    captcha_correct_keyboard, greeting_menu, farewell_menu, daily_rules_menu,
 )
 from bayes import BayesClassifier
 from handlers import _pending_edits
@@ -188,7 +188,7 @@ async def on_user_join(event: ChatMemberUpdated):
             return
 
     if settings.get("min_account_age_days", 3) > 0:
-        join_date = event.new_chat_member.joined_date or 0
+        join_date = int(event.date.timestamp())
         if not is_account_old_enough(join_date, settings["min_account_age_days"]):
             await ban_user(chat_id, user.id, "Аккаунт слишком новый")
             try:
@@ -441,6 +441,28 @@ async def message_handler(message: Message):
                     f"✅ Прощание обновлено!\n\n{text}",
                     reply_markup=farewell_menu(settings),
                 )
+                return
+            elif edit["type"] == "daily_rules_text":
+                settings.setdefault("daily_rules", {})["text"] = text
+                await db.save_settings(target_chat_id, settings)
+                await message.answer(
+                    "✅ Текст правил обновлён!",
+                    reply_markup=daily_rules_menu(settings),
+                )
+                return
+            elif edit["type"] == "daily_rules_time":
+                time_str = text.strip()
+                if ":" in time_str and len(time_str.split(":")) == 2:
+                    h, m = time_str.split(":")
+                    if h.isdigit() and m.isdigit() and 0 <= int(h) < 24 and 0 <= int(m) < 60:
+                        settings.setdefault("daily_rules", {})["time"] = time_str
+                        await db.save_settings(target_chat_id, settings)
+                        await message.answer(
+                            f"✅ Время автопостинга: {time_str}",
+                            reply_markup=daily_rules_menu(settings),
+                        )
+                        return
+                await message.answer("❌ Неверный формат. Используйте ЧЧ:ММ (например, 09:00)")
                 return
         _pending_edits.pop(user_id, None)
 

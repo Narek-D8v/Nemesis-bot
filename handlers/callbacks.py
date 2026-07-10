@@ -611,7 +611,7 @@ async def greeting_callbacks(callback: CallbackQuery, state: FSMContext):
         )
     elif action == "edit":
         _pending_edits[user_id] = {"type": "greeting", "chat_id": chat_id}
-        await safe_edit(callback, 
+        await safe_edit(callback,
             "✏️ Введите новый текст приветствия.\n"
             "Используйте <code>{username}</code> для вставки имени пользователя."
         )
@@ -634,12 +634,12 @@ async def farewell_callbacks(callback: CallbackQuery, state: FSMContext):
         settings["farewell"]["enabled"] = not settings["farewell"].get("enabled", True)
         await db.save_settings(chat_id, settings)
         await callback.answer(f"Прощание {'включено' if settings['farewell']['enabled'] else 'выключено'}")
-        await safe_edit(callback, 
+        await safe_edit(callback,
             "🚪 Прощание", reply_markup=farewell_menu(settings)
         )
     elif action == "edit":
         _pending_edits[user_id] = {"type": "farewell", "chat_id": chat_id}
-        await safe_edit(callback, 
+        await safe_edit(callback,
             "✏️ Введите новый текст прощания.\n"
             "Используйте <code>{username}</code> для вставки имени пользователя."
         )
@@ -783,6 +783,7 @@ async def daily_rules_callbacks(callback: CallbackQuery, state: FSMContext):
         await db.save_settings(chat_id, settings)
         await callback.answer(f"Автопостинг {'включён' if not enabled else 'выключен'}")
     elif action == "time":
+        _pending_edits[user_id] = {"type": "daily_rules_time", "chat_id": chat_id}
         await safe_edit(callback, 
             "⏰ Введите время для автопостинга (ЧЧ:ММ, например 09:00):"
         )
@@ -790,6 +791,7 @@ async def daily_rules_callbacks(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     elif action == "edit":
+        _pending_edits[user_id] = {"type": "daily_rules_text", "chat_id": chat_id}
         await safe_edit(callback, 
             "✏️ Введите новый текст правил:"
         )
