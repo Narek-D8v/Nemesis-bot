@@ -188,8 +188,11 @@ async def on_user_join(event: ChatMemberUpdated):
             return
 
     if settings.get("min_account_age_days", 3) > 0:
-        join_date = int(event.date.timestamp())
-        if not is_account_old_enough(join_date, settings["min_account_age_days"]):
+        try:
+            join_date = event.new_chat_member.joined_date or 0
+        except AttributeError:
+            join_date = None
+        if join_date is not None and not is_account_old_enough(join_date, settings["min_account_age_days"]):
             await ban_user(chat_id, user.id, "Аккаунт слишком новый")
             try:
                 await bot.send_message(
