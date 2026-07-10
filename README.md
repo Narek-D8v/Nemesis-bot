@@ -51,10 +51,12 @@ cp .env.example .env
 ```
 Отредактируйте .env и укажите:
 
-text
+```text
 BOT_TOKEN=ваш_токен_от_BotFather
 ADMIN_ID=ваш_Telegram_ID
 VIRUSTOTAL_API_KEY=ваш_API_ключ_VirusTotal
+```
+
 4. Запустить бота
 bash
 python main.py
