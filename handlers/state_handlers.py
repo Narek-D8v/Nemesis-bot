@@ -10,6 +10,7 @@ from keyboards import (
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
+from handlers import _pending_edits
 
 router = Router()
 
@@ -24,6 +25,7 @@ async def set_greeting(message: Message, state: FSMContext):
     settings = await db.get_settings(chat_id)
     settings.setdefault("greeting", {})["text"] = message.text
     await db.save_settings(chat_id, settings)
+    _pending_edits.pop(user_id, None)
     await state.clear()
     await message.answer(
         f"✅ Приветствие обновлено!\n\n{message.text}",
@@ -42,6 +44,7 @@ async def set_farewell(message: Message, state: FSMContext):
     settings = await db.get_settings(chat_id)
     settings.setdefault("farewell", {})["text"] = message.text
     await db.save_settings(chat_id, settings)
+    _pending_edits.pop(user_id, None)
     await state.clear()
     await message.answer(
         f"✅ Прощание обновлено!\n\n{message.text}",

@@ -22,8 +22,11 @@ from utils import (
     replace_mat, has_mask, is_account_old_enough,
     has_bot_command, esc,
 )
-from keyboards import captcha_correct_keyboard
+from keyboards import (
+    captcha_correct_keyboard, greeting_menu, farewell_menu,
+)
 from bayes import BayesClassifier
+from handlers import _pending_edits
 
 router = Router()
 
@@ -416,6 +419,31 @@ async def message_handler(message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     text = message.text
+
+    edit = _pending_edits.get(user_id)
+    if edit:
+        if await is_admin(edit["chat_id"], user_id):
+            target_chat_id = edit["chat_id"]
+            settings = await db.get_settings(target_chat_id)
+            _pending_edits.pop(user_id, None)
+            if edit["type"] == "greeting":
+                settings.setdefault("greeting", {})["text"] = text
+                await db.save_settings(target_chat_id, settings)
+                await message.answer(
+                    f"✅ Приветствие обновлено!\n\n{text}",
+                    reply_markup=greeting_menu(settings),
+                )
+                return
+            elif edit["type"] == "farewell":
+                settings.setdefault("farewell", {})["text"] = text
+                await db.save_settings(target_chat_id, settings)
+                await message.answer(
+                    f"✅ Прощание обновлено!\n\n{text}",
+                    reply_markup=farewell_menu(settings),
+                )
+                return
+        _pending_edits.pop(user_id, None)
+
     settings = await db.get_settings(chat_id)
 
     await db.track_message(chat_id, user_id)

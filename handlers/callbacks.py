@@ -19,6 +19,7 @@ from keyboards import (
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
+from handlers import _pending_edits
 
 router = Router()
 
@@ -609,6 +610,7 @@ async def greeting_callbacks(callback: CallbackQuery, state: FSMContext):
             "👋 Приветствие", reply_markup=greeting_menu(settings)
         )
     elif action == "edit":
+        _pending_edits[user_id] = {"type": "greeting", "chat_id": chat_id}
         await safe_edit(callback, 
             "✏️ Введите новый текст приветствия.\n"
             "Используйте <code>{username}</code> для вставки имени пользователя."
@@ -636,6 +638,7 @@ async def farewell_callbacks(callback: CallbackQuery, state: FSMContext):
             "🚪 Прощание", reply_markup=farewell_menu(settings)
         )
     elif action == "edit":
+        _pending_edits[user_id] = {"type": "farewell", "chat_id": chat_id}
         await safe_edit(callback, 
             "✏️ Введите новый текст прощания.\n"
             "Используйте <code>{username}</code> для вставки имени пользователя."
