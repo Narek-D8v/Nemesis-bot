@@ -64,8 +64,8 @@ async def on_startup():
     dp.include_router(admin.router)
     dp.include_router(callbacks.router)
     dp.include_router(payments.router)
-    dp.include_router(messages.router)
     dp.include_router(state_handlers.router)
+    dp.include_router(messages.router)
 
     logger.info("Handlers registered")
 
