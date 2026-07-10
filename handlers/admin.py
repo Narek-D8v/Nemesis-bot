@@ -147,7 +147,7 @@ async def admin_handler(message: Message):
         if cmd_rank < 1 or cmd_rank > 5:
             await message.reply("❌ Ранг должен быть от 1 до 5.")
             return
-        if cmd_rank >= rank:
+        if rank != 5 and cmd_rank >= rank:
             await message.reply("❌ Вы не можете назначить ранг выше или равный вашему.")
             return
         await db.set_user_rank(chat_id, target_id, cmd_rank, user_id)
@@ -171,7 +171,7 @@ async def admin_handler(message: Message):
             await message.reply("❌ Пользователь уже имеет максимальный ранг.")
             return
         new_rank = cur + 1
-        if new_rank >= rank:
+        if rank != 5 and new_rank >= rank:
             await message.reply("❌ Вы не можете повысить до ранга выше вашего.")
             return
         await db.set_user_rank(chat_id, target_id, new_rank, user_id)
@@ -233,7 +233,7 @@ async def admin_handler(message: Message):
             await message.reply("❌ Укажите пользователя.")
             return
         cur = await db.get_user_rank(chat_id, target_id)
-        if cur >= rank:
+        if rank != 5 and cur >= rank:
             await message.reply("❌ Вы не можете снять модератора с равным или высшим рангом.")
             return
         await db.remove_moderator(chat_id, target_id)
