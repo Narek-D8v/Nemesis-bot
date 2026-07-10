@@ -2,7 +2,8 @@ import random
 
 from aiogram import Router, types
 from aiogram.filters import Command
-from aiogram.types import WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import WebAppInfo
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 router = Router()
 
@@ -43,9 +44,9 @@ MESSAGES = [
 @router.message(Command("commands"))
 async def cmd_commands(message: types.Message):
     text = random.choice(MESSAGES)
-    button = InlineKeyboardButton(
+    builder = InlineKeyboardBuilder()
+    builder.button(
         text="📖 Документация",
         web_app=WebAppInfo(url="https://narek-d8v.github.io/Nemesis-bot-documentation/"),
     )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[button]])
-    await message.answer(text, reply_markup=keyboard)
+    await message.answer(text, reply_markup=builder.as_markup())
