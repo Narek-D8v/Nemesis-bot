@@ -62,9 +62,9 @@ async def check_url_safety(url: str):
     try:
         from vt import Client
         async with Client(VIRUSTOTAL_API_KEY) as client:
-            analysis = await client.scan_url(url)
-            report = await client.get_analysis(analysis.id)
-            stats = report.stats
+            analysis = await client.scan_url_async(url)
+            obj = await client.get_object_async(f"/analyses/{analysis.id}")
+            stats = dict(obj.stats)
             url_cache[url] = (stats, now)
             logger.info(f"VirusTotal URL check OK: {url} -> {stats}")
             return stats
@@ -106,9 +106,10 @@ async def check_file_safety(file_path: str, file_name: str = ""):
     try:
         from vt import Client
         async with Client(VIRUSTOTAL_API_KEY) as client:
-            analysis = await client.upload_file(file_path)
-            report = await client.get_analysis(analysis.id)
-            stats = report.stats
+            with open(file_path, "rb") as fh:
+                analysis = await client.scan_file_async(fh)
+            obj = await client.get_object_async(f"/analyses/{analysis.id}")
+            stats = dict(obj.stats)
             file_cache[sha256] = (stats, now)
             logger.info(f"VirusTotal file check OK: {file_name or file_path} -> {stats}")
             return stats

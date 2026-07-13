@@ -1,5 +1,7 @@
 import re
+import os
 import time
+import tempfile
 import random
 import asyncio
 import aiosqlite
@@ -20,7 +22,7 @@ from db import db
 from utils import (
     has_url, has_invite_link, has_mention_all, contains_mat,
     replace_mat, has_mask, is_account_old_enough,
-    has_bot_command, esc,
+    has_bot_command, esc, extract_all_urls,
 )
 from keyboards import (
     captcha_correct_keyboard, greeting_menu, farewell_menu, daily_rules_menu,
@@ -409,13 +411,13 @@ async def cmd_clear(message: Message):
     await message.answer("🧹 Бот может удалять только свои сообщения. Используйте !пург для массовой очистки.")
 
 
-@router.message(F.chat.type.in_({"group", "supergroup"}), F.text)
+@router.message(F.chat.type.in_({"group", "supergroup"}), F.text | F.caption)
 async def message_handler(message: Message):
     if message.from_user is None:
         return
     chat_id = message.chat.id
     user_id = message.from_user.id
-    text = message.text
+    text = message.text or message.caption or ""
 
     edit = _pending_edits.get(user_id)
     if edit:
@@ -458,7 +460,85 @@ async def message_handler(message: Message):
                             f"✅ Время автопостинга: {time_str}",
                             reply_markup=daily_rules_menu(settings),
                         )
-                        return
+    return
+
+
+@router.message(F.chat.type.in_({"group", "supergroup"}), (F.document | F.photo | F.video | F.audio | F.voice), ~F.caption)
+async def file_no_caption_handler(message: Message):
+    if message.from_user is None:
+        return
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+
+    settings = await db.get_settings(chat_id)
+    await db.track_message(chat_id, user_id)
+
+    if await is_admin(chat_id, user_id):
+        return
+
+    is_premium_group = await db.is_premium_group(chat_id)
+    if not is_premium_group:
+        return
+
+    if await is_whitelisted(chat_id, user_id, settings):
+        return
+
+    if not settings.get("virus_total_enabled", False):
+        return
+
+    from utils.virustotal import check_file_safety, SCANNABLE_EXTENSIONS
+
+    file_id = None
+    file_name = ""
+    if message.document:
+        file_id = message.document.file_id
+        file_name = message.document.file_name or ""
+    elif message.photo:
+        file_id = message.photo[-1].file_id
+        file_name = "photo.jpg"
+    elif message.video:
+        file_id = message.video.file_id
+        file_name = message.video.file_name or "video.mp4"
+    elif message.audio:
+        file_id = message.audio.file_id
+        file_name = message.audio.file_name or "audio.mp3"
+    elif message.voice:
+        file_id = message.voice.file_id
+        file_name = "voice.ogg"
+
+    if not file_id:
+        return
+
+    _, ext = os.path.splitext(file_name)
+    if ext.lower() not in SCANNABLE_EXTENSIONS:
+        return
+
+    file_obj = await bot.get_file(file_id)
+    if not file_obj.file_path:
+        return
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp_path = tmp.name
+        await bot.download_file(file_obj.file_path, destination=tmp_path)
+        stats = await check_file_safety(tmp_path, file_name)
+        if stats and stats.get("error") != "too_large":
+            if (stats.get("malicious", 0) + stats.get("suspicious", 0)) >= 1:
+                await message.delete()
+                await db.add_log(chat_id, user_id, "virus_total", f"Malicious file: {file_name}")
+                await message.answer(
+                    f"🛡️ {esc(message.from_user.first_name)}, ваш файл удален "
+                    f"(обнаружена вредоносная нагрузка)"
+                )
+    except Exception as e:
+        logger.warning(f"File VT scan error: {e}")
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
                 await message.answer("❌ Неверный формат. Используйте ЧЧ:ММ (например, 09:00)")
                 return
         _pending_edits.pop(user_id, None)
@@ -608,11 +688,10 @@ async def message_handler(message: Message):
         except Exception:
             pass
 
-    has_any_url = has_url(text) or has_invite_link(text)
-    if has_any_url and settings.get("virus_total_enabled", False) and is_premium_group:
-        from utils.virustotal import extract_urls, check_url_safety
-        urls = extract_urls(text)
-        for url in urls:
+    all_urls = extract_all_urls(message)
+    if all_urls and settings.get("virus_total_enabled", False) and is_premium_group:
+        from utils.virustotal import check_url_safety
+        for url in all_urls:
             stats = await check_url_safety(url)
             if stats and (stats.get("malicious", 0) + stats.get("suspicious", 0)) >= 1:
                 try:
@@ -626,11 +705,11 @@ async def message_handler(message: Message):
                     pass
                 return
 
-    if settings.get("invite_block", True) and has_invite_link(text):
+    if settings.get("invite_block", True) and any(has_invite_link(u) for u in all_urls):
         await handle_link_violation("Инвайт-ссылка")
         return
 
-    if settings.get("filter_links", {}).get("enabled", True) and has_url(text):
+    if settings.get("filter_links", {}).get("enabled", True) and all_urls:
         await handle_link_violation("Внешняя ссылка")
         return
 
@@ -655,13 +734,23 @@ async def message_handler(message: Message):
     if mute_filter.get("enabled", True) and contains_mat(text):
         if mute_filter.get("replace_with_stars", False):
             try:
-                await message.edit_text(replace_mat(text))
+                await message.delete()
+            except Exception:
+                pass
+            try:
+                clean_text = replace_mat(text)
+                await message.answer(
+                    f"✏️ {esc(message.from_user.first_name)} написал(а):\n{clean_text}"
+                )
                 await db.add_log(chat_id, user_id, "edit", "Замена мата")
             except Exception:
                 pass
         else:
             try:
                 await message.delete()
+            except Exception:
+                pass
+            try:
                 warns = await db.get_active_warns(chat_id, user_id)
                 mat_warns = [w for w in warns if w[1] == "мат"]
                 if len(mat_warns) >= 2:
@@ -678,9 +767,12 @@ async def message_handler(message: Message):
                         f"(предупреждение {len(mat_warns) + 1}/3)"
                     )
                     await asyncio.sleep(5)
-                    await warn.delete()
-            except Exception:
-                pass
+                    try:
+                        await warn.delete()
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"Mat filter processing error: {e}")
         return
 
     if settings.get("mask_check", True) and has_mask(text):
@@ -714,3 +806,81 @@ async def message_handler(message: Message):
         return
 
     return
+
+
+@router.message(F.chat.type.in_({"group", "supergroup"}), (F.document | F.photo | F.video | F.audio | F.voice), ~F.caption)
+async def file_no_caption_handler(message: Message):
+    if message.from_user is None:
+        return
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+
+    settings = await db.get_settings(chat_id)
+    await db.track_message(chat_id, user_id)
+
+    if await is_admin(chat_id, user_id):
+        return
+
+    is_premium_group = await db.is_premium_group(chat_id)
+    if not is_premium_group:
+        return
+
+    if await is_whitelisted(chat_id, user_id, settings):
+        return
+
+    if not settings.get("virus_total_enabled", False):
+        return
+
+    from utils.virustotal import check_file_safety, SCANNABLE_EXTENSIONS
+
+    file_id = None
+    file_name = ""
+    if message.document:
+        file_id = message.document.file_id
+        file_name = message.document.file_name or ""
+    elif message.photo:
+        file_id = message.photo[-1].file_id
+        file_name = "photo.jpg"
+    elif message.video:
+        file_id = message.video.file_id
+        file_name = message.video.file_name or "video.mp4"
+    elif message.audio:
+        file_id = message.audio.file_id
+        file_name = message.audio.file_name or "audio.mp3"
+    elif message.voice:
+        file_id = message.voice.file_id
+        file_name = "voice.ogg"
+
+    if not file_id:
+        return
+
+    _, ext = os.path.splitext(file_name)
+    if ext.lower() not in SCANNABLE_EXTENSIONS:
+        return
+
+    file_obj = await bot.get_file(file_id)
+    if not file_obj.file_path:
+        return
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp_path = tmp.name
+        await bot.download_file(file_obj.file_path, destination=tmp_path)
+        stats = await check_file_safety(tmp_path, file_name)
+        if stats and stats.get("error") != "too_large":
+            if (stats.get("malicious", 0) + stats.get("suspicious", 0)) >= 1:
+                await message.delete()
+                await db.add_log(chat_id, user_id, "virus_total", f"Malicious file: {file_name}")
+                await message.answer(
+                    f"🛡️ {esc(message.from_user.first_name)}, ваш файл удален "
+                    f"(обнаружена вредоносная нагрузка)"
+                )
+    except Exception as e:
+        logger.warning(f"File VT scan error: {e}")
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass

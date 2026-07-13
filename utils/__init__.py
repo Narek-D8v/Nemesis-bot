@@ -2,6 +2,9 @@ import re
 import time
 import html
 
+from aiogram.types import Message
+from aiogram.enums import MessageEntityType
+
 URL_PATTERN = re.compile(
     r'(https?://|www\.|t\.me/|bit\.ly/|tinyurl\.com/|vk\.com/|telegram\.me/|'
     r'youtu\.be/|youtube\.com/|instagram\.com/|twitter\.com/|x\.com/|'
@@ -44,6 +47,24 @@ def has_url(text: str) -> bool:
 
 def has_invite_link(text: str) -> bool:
     return bool(INVITE_PATTERN.search(text))
+
+def extract_all_urls(message: Message) -> list[str]:
+    urls: set[str] = set()
+    text = message.text or message.caption or ""
+
+    for match in URL_PATTERN.finditer(text):
+        urls.add(match.group())
+
+    for entity in (message.entities or []):
+        if entity.type == MessageEntityType.TEXT_LINK and entity.url:
+            urls.add(entity.url)
+
+    for entity in (message.caption_entities or []):
+        if entity.type == MessageEntityType.TEXT_LINK and entity.url:
+            urls.add(entity.url)
+
+    return list(urls)
+
 
 def has_mention_all(text: str) -> bool:
     return bool(MENTION_ALL_PATTERN.search(text))
