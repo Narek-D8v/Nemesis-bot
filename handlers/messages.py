@@ -26,7 +26,7 @@ from keyboards import (
     captcha_correct_keyboard, greeting_menu, farewell_menu, daily_rules_menu,
 )
 from bayes import BayesClassifier
-from handlers import _pending_edits
+from handlers import _pending_edits, _captcha_answers
 
 router = Router()
 
@@ -124,7 +124,7 @@ async def warn_and_check(chat_id: int, user_id: int, reason: str, settings: dict
     warnings = await db.get_active_warns(chat_id, user_id)
     warn_limit = settings.get("auto_mute_after_warns", 3)
     if len(warnings) >= warn_limit:
-        mute_duration = settings.get("auto_mute_durations", {}).get("mute", 10)
+        mute_duration = settings.get("auto_mute_durations", {}).get("links", 15)
         await mute_user(chat_id, user_id, mute_duration, f"Превышение лимита предупреждений ({reason})")
         await db.clear_warns(chat_id, user_id)
         return True
@@ -141,15 +141,15 @@ async def send_captcha(chat_id: int, user_id: int):
             msg = await bot.send_message(
                 chat_id,
                 f"🧩 <b>Капча для новичка!</b>\n\n"
-                f"{user_id}, реши пример: {a} + {b} = ?\n"
+                f"<a href='tg://user?id={user_id}'>User</a>, реши пример: {a} + {b} = ?\n"
                 f"У вас есть 60 секунд.",
             )
-            await db.add_log(chat_id, user_id, "captcha", f"math:{answer}")
+            _captcha_answers[(user_id, chat_id)] = answer
         else:
             msg = await bot.send_message(
                 chat_id,
                 f"🧩 <b>Капча для новичка!</b>\n\n"
-                f"{user_id}, нажми кнопку, чтобы подтвердить, что ты не робот.",
+                f"<a href='tg://user?id={user_id}'>User</a>, нажми кнопку, чтобы подтвердить, что ты не робот.",
                 reply_markup=captcha_correct_keyboard(),
             )
     except Exception as e:
@@ -218,7 +218,7 @@ async def on_user_join(event: ChatMemberUpdated):
     if settings.get("captcha", {}).get("enabled", True):
         await send_captcha(chat_id, user.id)
 
-    if settings.get("greeting", {}).get("enabled", True):
+    if settings.get("show_join_leave", True) and settings.get("greeting", {}).get("enabled", True):
         greeting_text = settings["greeting"]["text"]
         greeting_text = greeting_text.replace("{username}", esc(username_display))
         try:
@@ -255,7 +255,7 @@ async def on_user_leave(event: ChatMemberUpdated):
                 except Exception as e:
                     logger.warning(f"Autokick on exit failed: {e}")
 
-    if settings.get("farewell", {}).get("enabled", True):
+    if settings.get("show_join_leave", True) and settings.get("farewell", {}).get("enabled", True):
         username_display = f"@{user.username}" if user.username else user.full_name
         farewell_text = settings["farewell"]["text"]
         farewell_text = farewell_text.replace("{username}", esc(username_display))
@@ -402,23 +402,16 @@ async def cmd_clear(message: Message):
         return
 
     try:
-        cutoff = int(time.time()) - 3600
-        deleted = 0
-        async for msg in bot.get_chat_history(chat_id, limit=100):
-            if msg.date.timestamp() >= cutoff and not msg.is_topic_message:
-                try:
-                    await msg.delete()
-                    deleted += 1
-                except Exception:
-                    pass
-        await message.answer(f"🧹 Удалено {deleted} сообщений за последний час.")
-    except Exception as e:
-        logger.warning(f"Clear chat failed: {e}")
-        await message.answer("❌ Не удалось очистить чат. Проверьте права бота.")
+        await message.delete()
+    except Exception:
+        pass
+    await message.answer("🧹 Бот может удалять только свои сообщения. Используйте !пург для массовой очистки.")
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text)
 async def message_handler(message: Message):
+    if message.from_user is None:
+        return
     chat_id = message.chat.id
     user_id = message.from_user.id
     text = message.text
@@ -481,6 +474,33 @@ async def message_handler(message: Message):
     if is_premium_group and await is_whitelisted(chat_id, user_id, settings):
         return
 
+    if settings.get("captcha", {}).get("enabled", True):
+        async with aiosqlite.connect(db.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT * FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
+                (user_id, chat_id),
+            )
+            pending = await cursor.fetchone()
+        if pending:
+            captcha_type = settings.get("captcha", {}).get("type", "button")
+            if captcha_type == "math":
+                answer = _captcha_answers.get((user_id, chat_id))
+                if answer is not None and text.isdigit() and int(text) == answer:
+                    _captcha_answers.pop((user_id, chat_id), None)
+                    async with aiosqlite.connect(db.db_path) as conn:
+                        await conn.execute(
+                            "DELETE FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
+                            (user_id, chat_id),
+                        )
+                        await conn.commit()
+                    await message.reply(f"✅ {esc(message.from_user.first_name)}, капча пройдена! Добро пожаловать.")
+                    return
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            return
+
     bayes_settings = await db.get_bayes_settings(chat_id)
     if bayes_settings['enabled']:
         try:
@@ -514,7 +534,8 @@ async def message_handler(message: Message):
         if key not in last_messages:
             last_messages[key] = []
             if len(last_messages) > 10000:
-                last_messages.pop(next(iter(last_messages)))
+                for _ in range(2000):
+                    last_messages.pop(next(iter(last_messages)), None)
         last_messages[key].append(text)
         last_messages[key] = last_messages[key][-5:]
         if len(last_messages[key]) >= 3 and len(set(last_messages[key][-3:])) == 1:
@@ -580,7 +601,7 @@ async def message_handler(message: Message):
         try:
             await message.delete()
             await db.add_log(chat_id, user_id, "delete", "Маскировка символов")
-            captcha_susp = settings.get("captcha_for_suspicious", settings.get("captcha", {}).get("suspicious", True))
+            captcha_susp = settings.get("captcha", {}).get("suspicious", settings.get("captcha_for_suspicious", True))
             if captcha_susp:
                 await send_captcha(chat_id, user_id)
         except Exception:
@@ -628,7 +649,7 @@ async def message_handler(message: Message):
                     await db.add_log(chat_id, user_id, "warn", "мат")
                     warn = await message.answer(
                         f"⚠️ {esc(message.from_user.first_name)}, мат запрещён! "
-                        f"(предупреждение {len(mat_warnings) + 1}/3)"
+                        f"(предупреждение {len(mat_warns) + 1}/3)"
                     )
                     await asyncio.sleep(5)
                     await warn.delete()
@@ -639,8 +660,11 @@ async def message_handler(message: Message):
     if settings.get("forward_block", True) and (message.forward_from or message.forward_from_chat or message.forward_sender_name):
         try:
             member = await bot.get_chat_member(chat_id, user_id)
-            joined_date = member.joined_date or 0
-            if time.time() - joined_date < 86400:
+            try:
+                joined_date = member.joined_date or 0
+            except AttributeError:
+                joined_date = 0
+            if joined_date and time.time() - joined_date < 86400:
                 await message.delete()
                 await db.add_log(chat_id, user_id, "delete", "Форвард новичка")
                 warn = await message.answer(

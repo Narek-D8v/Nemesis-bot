@@ -913,7 +913,7 @@ class Database:
             cutoff = now - 7 * 86400
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
-                "SELECT user_id, COUNT(*) as cnt FROM logs WHERE chat_id = ? AND timestamp > ? AND action NOT IN ('mute', 'unmute', 'ban', 'unban', 'warn', 'unwarn', 'delete', 'edit', 'kick', 'amnesty') GROUP BY user_id ORDER BY cnt DESC LIMIT ?",
+                "SELECT user_id, COUNT(*) as cnt FROM logs WHERE chat_id = ? AND timestamp > ? AND action IN ('warn', 'mute', 'ban', 'delete', 'kick') GROUP BY user_id ORDER BY cnt DESC LIMIT ?",
                 (chat_id, cutoff, limit),
             )
             return await cursor.fetchall()

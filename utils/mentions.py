@@ -16,7 +16,7 @@ async def extract_user(text: str, message: Message):
         username = mention.group(1).lower()
         try:
             from bot import bot
-            async for member in bot.get_chat_administrators(message.chat.id):
+            for member in await bot.get_chat_administrators(message.chat.id):
                 if member.user.username and member.user.username.lower() == username:
                     return member.user.id
         except Exception:

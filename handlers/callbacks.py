@@ -19,7 +19,7 @@ from keyboards import (
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
-from handlers import _pending_edits
+from handlers import _pending_edits, _captcha_answers
 
 router = Router()
 
@@ -341,17 +341,18 @@ async def captcha_callback(callback: CallbackQuery):
         status = "включена" if settings["captcha"]["enabled"] else "выключена"
         await callback.answer(f"Капча {status}")
     elif action == "type":
-        await safe_edit(callback, 
-            "Выберите тип капчи:",
-            reply_markup=captcha_type_menu()
-        )
-        await callback.answer()
-        return
-    elif action.startswith("type:"):
-        cap_type = parts[2]
-        settings["captcha"]["type"] = cap_type
-        await db.save_settings(chat_id, settings)
-        await callback.answer(f"Тип капчи: {'Кнопка' if cap_type == 'button' else 'Математика'}")
+        if len(parts) > 2:
+            cap_type = parts[2]
+            settings["captcha"]["type"] = cap_type
+            await db.save_settings(chat_id, settings)
+            await callback.answer(f"Тип капчи: {'Кнопка' if cap_type == 'button' else 'Математика'}")
+        else:
+            await safe_edit(callback, 
+                "Выберите тип капчи:",
+                reply_markup=captcha_type_menu()
+            )
+            await callback.answer()
+            return
     else:
         await callback.answer()
 
@@ -388,7 +389,7 @@ async def filter_links_callback(callback: CallbackQuery):
         act = parts[2]
         settings["filter_links"]["action"] = act
         await db.save_settings(chat_id, settings)
-        labels = {"delete": "Удаление", "warn": "Предупреждение", "mute": "Мут"}
+        labels = {"delete": "Удаление", "warn": "Предупреждение", "mute": "Мут", "warn_mute": "Warn+Мут", "ban": "Бан"}
         await callback.answer(f"Действие: {labels.get(act, act)}")
 
     settings["_vt_premium"] = await db.is_premium_group(chat_id)
@@ -458,6 +459,15 @@ async def settings_callbacks(callback: CallbackQuery):
 
     if action in toggles:
         keys = toggles[action]
+        if action == "min_age":
+            current = settings.get("min_account_age_days", 3)
+            settings["min_account_age_days"] = 0 if current > 0 else 3
+            await db.save_settings(chat_id, settings)
+            await callback.answer("✅ Возрастная проверка: " + ("включена" if settings["min_account_age_days"] > 0 else "выключена"))
+            await safe_edit(callback, 
+                "⚙️ Настройки", reply_markup=settings_menu(settings)
+            )
+            return
         if keys:
             key = keys[0]
             settings[key] = not settings.get(key, True)
@@ -832,6 +842,7 @@ async def captcha_verify_callback(callback: CallbackQuery):
             await conn.commit()
 
     if pending:
+        _captcha_answers.pop((user_id, chat_id), None)
         await safe_edit(callback, 
             f"✅ {esc(callback.from_user.first_name)}, капча пройдена! Добро пожаловать."
         )
@@ -956,28 +967,36 @@ async def premium_callbacks(callback: CallbackQuery):
             if not await is_admin(chat_id, user_id):
                 await callback.answer("❌ Только для администраторов", show_alert=True)
                 return
-            await bot.send_invoice(
-                chat_id=chat_id,
-                title="Личный премиум",
-                description="Доступ ко всем премиум-функциям на 30 дней",
-                payload="personal_premium",
-                currency="XTR",
-                prices=[{"label": "30 дней", "amount": 10}],
-                start_parameter="personal_premium_30",
-            )
+            try:
+                await bot.send_invoice(
+                    chat_id=user_id,
+                    title="Личный премиум",
+                    description="Доступ ко всем премиум-функциям на 30 дней",
+                    payload="personal_premium",
+                    currency="XTR",
+                    prices=[{"label": "30 дней", "amount": 10}],
+                    start_parameter="personal_premium_30",
+                )
+            except Exception:
+                await callback.answer("❌ Напишите боту в личные сообщения, чтобы оплатить", show_alert=True)
+                return
         elif sub_type == "group":
             if not await is_admin(chat_id, user_id):
                 await callback.answer("❌ Только админы могут купить групповой премиум", show_alert=True)
                 return
-            await bot.send_invoice(
-                chat_id=chat_id,
-                title="Премиум для группы",
-                description="Доступ ко всем премиум-функциям для группы на 30 дней",
-                payload="group_premium",
-                currency="XTR",
-                prices=[{"label": "30 дней", "amount": 5}],
-                start_parameter="group_premium_30",
-            )
+            try:
+                await bot.send_invoice(
+                    chat_id=user_id,
+                    title="Премиум для группы",
+                    description="Доступ ко всем премиум-функциям для группы на 30 дней",
+                    payload="group_premium",
+                    currency="XTR",
+                    prices=[{"label": "30 дней", "amount": 5}],
+                    start_parameter="group_premium_30",
+                )
+            except Exception:
+                await callback.answer("❌ Напишите боту в личные сообщения, чтобы оплатить", show_alert=True)
+                return
     elif action == "info_user":
         is_premium = await db.is_premium_user(user_id)
         if is_premium:

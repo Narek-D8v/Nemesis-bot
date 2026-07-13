@@ -56,23 +56,29 @@ def normalize_text(text: str) -> str:
     return ''.join(result)
 
 def has_mask(text: str) -> bool:
+    if not text:
+        return False
+    has_cyrillic = bool(re.search(r'[а-яё]', text, re.IGNORECASE))
+    if not has_cyrillic:
+        return False
     normalized = normalize_text(text)
-    return normalized != text
+    if normalized == text:
+        return False
+    diff_count = sum(1 for a, b in zip(text, normalized) if a != b)
+    return diff_count >= 2
 
 def _strip_non_alpha(text: str) -> str:
-    return re.sub(r'[^a-zа-яё]', '', text.replace('ё', 'е'))
+    return re.sub(r'[^a-z0-9]', '', text)
 
 def contains_mat(text: str, mat_list: list = None) -> bool:
     if mat_list is None:
         mat_list = MAT_LIST
-    text_lower = text.lower()
-    text_stripped = _strip_non_alpha(text_lower)
-    normalized = normalize_text(text_stripped)
+    text_lower = text.lower().replace('ё', 'е')
+    text_normalized = normalize_text(text_lower)
+    text_stripped = _strip_non_alpha(text_normalized)
     for word in mat_list:
-        if word in text_stripped:
-            return True
-        word_norm = normalize_text(word)
-        if word_norm and word_norm in normalized:
+        word_norm = normalize_text(word).replace('ё', 'е')
+        if word_norm in text_stripped or word in text_lower:
             return True
     return False
 
@@ -121,13 +127,25 @@ def esc(text: str) -> str:
     return html.escape(str(text), quote=False)
 
 def format_duration(minutes: int) -> str:
+    if minutes is None:
+        return "навсегда"
     if minutes < 60:
         return f"{minutes} мин"
-    hours = minutes // 60
-    mins = minutes % 60
-    if mins == 0:
-        return f"{hours} ч"
-    return f"{hours} ч {mins} мин"
+    if minutes < 1440:
+        h = minutes // 60
+        m = minutes % 60
+        return f"{h} ч {m} мин" if m else f"{h} ч"
+    d = minutes // 1440
+    if d >= 365:
+        y = d // 365
+        return f"{y} г"
+    if d >= 30:
+        mo = d // 30
+        return f"{mo} мес"
+    if d >= 7:
+        w = d // 7
+        return f"{w} н"
+    return f"{d} д"
 
 def apply_aggression_level(settings: dict, level: int):
     if level == 0:

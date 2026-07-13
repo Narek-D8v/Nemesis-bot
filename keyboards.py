@@ -271,6 +271,10 @@ def link_action_menu():
     )
     b.row(
         InlineKeyboardButton(text="🔇 Мутить", callback_data="fl:a:mute"),
+        InlineKeyboardButton(text="⚠️+🔇 Warn+Mute", callback_data="fl:a:warn_mute")
+    )
+    b.row(
+        InlineKeyboardButton(text="⛔ Банить", callback_data="fl:a:ban"),
         InlineKeyboardButton(text="🔙 Назад", callback_data="menu:protection")
     )
     return b.as_markup()

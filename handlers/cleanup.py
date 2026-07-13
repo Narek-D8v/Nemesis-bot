@@ -231,20 +231,20 @@ async def cleanup_handler(message: Message):
                 await message.reply("❌ Недостаточно прав.")
                 return
             hours = 10
+            max_msgs = 3
             for p in rest.split():
                 pd = parse_time(p)
                 if pd:
                     hours = max(1, pd // 60)
                     break
             cutoff = int(time.time()) - hours * 3600
-            newcomers = await db.get_users_by_msg_count(chat_id, min_count=0, since=0)
+            newcomers = await db.get_users_by_msg_count(chat_id, min_count=0, max_count=max_msgs, since=cutoff)
             kicked = 0
             for nid, ncount, ntime in newcomers:
-                if ntime and ntime > cutoff:
-                    if await kick_user(chat_id, nid, "Новичок"):
-                        await db.add_kick(chat_id, nid, user_id, f"Новичок {hours}ч", False)
-                        kicked += 1
-                        await asyncio.sleep(0.3)
+                if await kick_user(chat_id, nid, "Новичок"):
+                    await db.add_kick(chat_id, nid, user_id, f"Новичок {hours}ч", False)
+                    kicked += 1
+                    await asyncio.sleep(0.3)
             resp = f"👢 Исключено новичков: {kicked}"
             if show_tags:
                 resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
