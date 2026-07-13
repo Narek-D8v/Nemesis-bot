@@ -15,10 +15,12 @@ from config import ADMIN_ID
 
 
 async def daily_rules_scheduler():
+    last_posted: dict[int, str] = {}
     while True:
         try:
             now = time.localtime()
             current_time = f"{now.tm_hour:02d}:{now.tm_min:02d}"
+            today = f"{now.tm_year}-{now.tm_mon:02d}-{now.tm_mday:02d}"
 
             async with aiosqlite.connect(db.db_path) as conn:
                 cursor = await conn.execute("SELECT chat_id, config FROM group_settings")
@@ -28,6 +30,9 @@ async def daily_rules_scheduler():
                 settings = json.loads(config_json)
                 dr = settings.get("daily_rules", {})
                 if dr.get("enabled") and dr.get("time") == current_time:
+                    posted_key = last_posted.get(chat_id)
+                    if posted_key == today:
+                        continue
                     is_premium = await db.is_premium_group(chat_id)
                     if is_premium:
                         try:
@@ -35,6 +40,7 @@ async def daily_rules_scheduler():
                                 chat_id,
                                 f"📋 <b>Правила группы</b>\n\n{dr.get('text', 'Правила группы...')}"
                             )
+                            last_posted[chat_id] = today
                             logger.info(f"Daily rules posted to {chat_id}")
                         except Exception as e:
                             logger.warning(f"Failed to post daily rules to {chat_id}: {e}")
