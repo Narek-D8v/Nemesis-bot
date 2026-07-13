@@ -31,6 +31,7 @@ from handlers import _pending_edits, _captcha_answers
 router = Router()
 
 last_messages: OrderedDict = OrderedDict()
+_classifiers: dict[str, BayesClassifier] = {}
 
 NEMUSYA_REPLIES = [
     "Мур-мур! 🐱",
@@ -504,7 +505,10 @@ async def message_handler(message: Message):
     bayes_settings = await db.get_bayes_settings(chat_id)
     if bayes_settings['enabled']:
         try:
-            classifier = BayesClassifier(db.db_path, bayes_settings['model_name'])
+            model = bayes_settings['model_name']
+            if model not in _classifiers:
+                _classifiers[model] = BayesClassifier(db.db_path, model)
+            classifier = _classifiers[model]
             is_spam, confidence = await classifier.classify(text)
             if is_spam and confidence >= bayes_settings['threshold']:
                 await message.delete()
@@ -572,22 +576,39 @@ async def message_handler(message: Message):
             await db.add_log(chat_id, user_id, "delete", link_type)
             if action == "warn":
                 await warn_and_check(chat_id, user_id, link_type, settings)
-                await message.answer(
-                    f"⚠️ {esc(message.from_user.first_name)}, {link_type} запрещены!"
-                )
             elif action == "mute":
                 await mute_user(chat_id, user_id, 15, link_type)
             elif action == "warn_mute":
                 warned = await warn_and_check(chat_id, user_id, link_type, settings)
                 if warned:
                     await mute_user(chat_id, user_id, 30, link_type)
-                await message.answer(
-                    f"⚠️ {esc(message.from_user.first_name)}, {link_type} запрещены!"
-                )
             elif action == "ban":
                 await ban_user(chat_id, user_id, link_type)
+            resp = await message.answer(
+                f"🚫 {esc(message.from_user.first_name)}, {link_type} запрещены!"
+            )
+            await asyncio.sleep(5)
+            await resp.delete()
         except Exception:
             pass
+
+    has_any_url = has_url(text) or has_invite_link(text)
+    if has_any_url and settings.get("virus_total_enabled", False) and is_premium_group:
+        from utils.virustotal import extract_urls, check_url_safety
+        urls = extract_urls(text)
+        for url in urls:
+            stats = await check_url_safety(url)
+            if stats and (stats.get("malicious", 0) + stats.get("suspicious", 0)) >= 1:
+                try:
+                    await message.delete()
+                    await db.add_log(chat_id, user_id, "virus_total", f"Malicious URL: {url}")
+                    await message.answer(
+                        f"🛡️ {esc(message.from_user.first_name)}, ваше сообщение удалено "
+                        f"(обнаружена вредоносная ссылка)"
+                    )
+                except Exception:
+                    pass
+                return
 
     if settings.get("invite_block", True) and has_invite_link(text):
         await handle_link_violation("Инвайт-ссылка")
@@ -595,17 +616,6 @@ async def message_handler(message: Message):
 
     if settings.get("filter_links", {}).get("enabled", True) and has_url(text):
         await handle_link_violation("Внешняя ссылка")
-        return
-
-    if settings.get("mask_check", True) and has_mask(text):
-        try:
-            await message.delete()
-            await db.add_log(chat_id, user_id, "delete", "Маскировка символов")
-            captcha_susp = settings.get("captcha", {}).get("suspicious", settings.get("captcha_for_suspicious", True))
-            if captcha_susp:
-                await send_captcha(chat_id, user_id)
-        except Exception:
-            pass
         return
 
     blacklist_words = settings.get("blacklist_words", [])
@@ -657,6 +667,17 @@ async def message_handler(message: Message):
                 pass
         return
 
+    if settings.get("mask_check", True) and has_mask(text):
+        try:
+            await message.delete()
+            await db.add_log(chat_id, user_id, "delete", "Маскировка символов")
+            captcha_susp = settings.get("captcha", {}).get("suspicious", settings.get("captcha_for_suspicious", True))
+            if captcha_susp:
+                await send_captcha(chat_id, user_id)
+        except Exception:
+            pass
+        return
+
     if settings.get("forward_block", True) and (message.forward_from or message.forward_from_chat or message.forward_sender_name):
         try:
             member = await bot.get_chat_member(chat_id, user_id)
@@ -676,23 +697,4 @@ async def message_handler(message: Message):
             pass
         return
 
-    if settings.get("virus_total_enabled", False) and is_premium_group:
-        from utils.virustotal import extract_urls, check_url_safety
-        urls = extract_urls(text)
-        for url in urls:
-            stats = await check_url_safety(url)
-            if stats and (stats.get("malicious", 0) + stats.get("suspicious", 0)) >= 1:
-                try:
-                    await message.delete()
-                    await db.add_log(chat_id, user_id, "virus_total", f"Malicious URL: {url}")
-                    logger.info(f"Deleted malicious URL from {user_id} in {chat_id}: {url}")
-                    warn = await message.answer(
-                        f"🛡️ {esc(message.from_user.first_name)}, ваше сообщение удалено "
-                        f"(обнаружена вредоносная ссылка: {stats.get('malicious', 0)} malicious, "
-                        f"{stats.get('suspicious', 0)} suspicious)"
-                    )
-                    await asyncio.sleep(5)
-                    await warn.delete()
-                except Exception:
-                    pass
-                return
+    return
