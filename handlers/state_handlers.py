@@ -15,10 +15,17 @@ from handlers import _pending_edits
 router = Router()
 
 
+def _get_stored_chat_id(user_id: int) -> int | None:
+    edit = _pending_edits.get(user_id)
+    if edit:
+        return edit.get("chat_id")
+    return None
+
+
 @router.message(SettingsStates.waiting_greeting)
 async def set_greeting(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
@@ -36,8 +43,8 @@ async def set_greeting(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_farewell)
 async def set_farewell(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
@@ -55,8 +62,8 @@ async def set_farewell(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_blacklist_word)
 async def add_blacklist_word(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
@@ -79,8 +86,8 @@ async def add_blacklist_word(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_blacklist_word_remove)
 async def remove_blacklist_word(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
@@ -103,19 +110,19 @@ async def remove_blacklist_word(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_whitelist_user_add)
 async def add_whitelist_user(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
     settings = await db.get_settings(chat_id)
     try:
-        user_id = int(message.text.strip())
-        if user_id not in settings.get("whitelist", []):
-            settings.setdefault("whitelist", []).append(user_id)
+        target_id = int(message.text.strip())
+        if target_id not in settings.get("whitelist", []):
+            settings.setdefault("whitelist", []).append(target_id)
             await db.save_settings(chat_id, settings)
             await message.answer(
-                f"✅ Пользователь {user_id} добавлен в белый список!",
+                f"✅ Пользователь {target_id} добавлен в белый список!",
                 reply_markup=whitelist_menu()
             )
         else:
@@ -133,20 +140,20 @@ async def add_whitelist_user(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_whitelist_user_remove)
 async def remove_whitelist_user(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
     settings = await db.get_settings(chat_id)
     try:
-        user_id = int(message.text.strip())
+        target_id = int(message.text.strip())
         whitelist = settings.get("whitelist", [])
-        if user_id in whitelist:
-            whitelist.remove(user_id)
+        if target_id in whitelist:
+            whitelist.remove(target_id)
             await db.save_settings(chat_id, settings)
             await message.answer(
-                f"✅ Пользователь {user_id} удалён из белого списка!",
+                f"✅ Пользователь {target_id} удалён из белого списка!",
                 reply_markup=whitelist_menu()
             )
         else:
@@ -164,15 +171,15 @@ async def remove_whitelist_user(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_daily_rules_text)
 async def set_daily_rules_text(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
     settings = await db.get_settings(chat_id)
     settings.setdefault("daily_rules", {})["text"] = message.text
     await db.save_settings(chat_id, settings)
-    _pending_edits.pop(message.from_user.id, None)
+    _pending_edits.pop(user_id, None)
     await state.clear()
     await message.answer(
         "✅ Текст правил обновлён!",
@@ -182,8 +189,8 @@ async def set_daily_rules_text(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_daily_rules_time)
 async def set_daily_rules_time(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
         return
@@ -206,10 +213,14 @@ async def set_daily_rules_time(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_night_start)
 async def set_night_start(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
+        return
+    if not await db.is_premium_group(chat_id):
+        await message.reply("❌ Ночной режим доступен только для премиум-групп.")
+        await state.clear()
         return
     try:
         hour = int(message.text.strip())
@@ -230,10 +241,14 @@ async def set_night_start(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_night_end)
 async def set_night_end(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
+        return
+    if not await db.is_premium_group(chat_id):
+        await message.reply("❌ Ночной режим доступен только для премиум-групп.")
+        await state.clear()
         return
     try:
         hour = int(message.text.strip())
@@ -254,10 +269,14 @@ async def set_night_end(message: Message, state: FSMContext):
 
 @router.message(SettingsStates.waiting_night_action)
 async def set_night_action(message: Message, state: FSMContext):
-    chat_id = message.chat.id
     user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
     if not await is_admin(chat_id, user_id):
         await message.reply("❌ Только для администраторов")
+        return
+    if not await db.is_premium_group(chat_id):
+        await message.reply("❌ Ночной режим доступен только для премиум-групп.")
+        await state.clear()
         return
     valid = {"мут": "mute", "бан": "ban", "предупреждение": "warn"}
     text = message.text.strip().lower()

@@ -89,9 +89,9 @@ async def cmd_scan(message: Message):
     if reply:
         urls = []
         if reply.text:
-            urls = extract_urls(reply.text)
+            urls.extend(extract_urls(reply.text))
         if reply.caption:
-            urls = extract_urls(reply.caption)
+            urls.extend(extract_urls(reply.caption))
 
         file_info = None
         for attr in ("document", "video", "audio", "voice", "animation"):

@@ -1,6 +1,8 @@
 import time
 import aiosqlite
 
+import copy
+
 from aiogram import Router
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -299,6 +301,7 @@ async def antispam_callback(callback: CallbackQuery):
         await safe_edit(callback, 
             "🔐 Настройка защиты", reply_markup=protection_menu(settings)
         )
+        return
     elif action == "threshold":
         await safe_edit(callback, 
             "Выберите порог сообщений в минуту:",
@@ -321,6 +324,7 @@ async def antispam_callback(callback: CallbackQuery):
         await safe_edit(callback, 
             "🔐 Настройка защиты", reply_markup=protection_menu(settings)
         )
+        return
     await callback.answer()
 
 
@@ -461,9 +465,13 @@ async def settings_callbacks(callback: CallbackQuery):
         keys = toggles[action]
         if action == "min_age":
             current = settings.get("min_account_age_days", 3)
-            settings["min_account_age_days"] = 0 if current > 0 else 3
+            if current > 0:
+                settings["min_account_age_days"] = 0
+                await callback.answer("✅ Возрастная проверка выключена")
+            else:
+                settings["min_account_age_days"] = 3
+                await callback.answer("✅ Возрастная проверка включена (3 дня)")
             await db.save_settings(chat_id, settings)
-            await callback.answer("✅ Возрастная проверка: " + ("включена" if settings["min_account_age_days"] > 0 else "выключена"))
             await safe_edit(callback, 
                 "⚙️ Настройки", reply_markup=settings_menu(settings)
             )
@@ -473,10 +481,10 @@ async def settings_callbacks(callback: CallbackQuery):
             settings[key] = not settings.get(key, True)
             await db.save_settings(chat_id, settings)
             await callback.answer(f"{'Включено' if settings[key] else 'Выключено'}")
-            await safe_edit(callback, 
-                "⚙️ Настройки", reply_markup=settings_menu(settings)
-            )
-            return
+        await safe_edit(callback, 
+            "⚙️ Настройки", reply_markup=settings_menu(settings)
+        )
+        return
 
     if action == "warn_count":
         await safe_edit(callback, 
@@ -499,6 +507,7 @@ async def settings_callbacks(callback: CallbackQuery):
         await callback.answer(f"После {count} предупреждений — мут")
     elif action == "extra":
         await callback.answer("Дополнительные настройки")
+        return
     elif action.startswith("extra_"):
         extra_idx = int(action.split("_")[1])
         extra_toggles = [
@@ -514,8 +523,10 @@ async def settings_callbacks(callback: CallbackQuery):
             settings[key] = not settings.get(key, True)
             await db.save_settings(chat_id, settings)
             await callback.answer(f"{'Включено' if settings[key] else 'Выключено'}")
+        else:
+            await callback.answer()
+            return
 
-    await callback.answer()
     await safe_edit(callback, 
         "⚙️ Настройки", reply_markup=settings_menu(settings)
     )
@@ -985,11 +996,12 @@ async def premium_callbacks(callback: CallbackQuery):
                 await callback.answer("❌ Только админы могут купить групповой премиум", show_alert=True)
                 return
             try:
+                payload = f"group_premium:{chat_id}"
                 await bot.send_invoice(
                     chat_id=user_id,
                     title="Премиум для группы",
                     description="Доступ ко всем премиум-функциям для группы на 30 дней",
-                    payload="group_premium",
+                    payload=payload,
                     currency="XTR",
                     prices=[{"label": "30 дней", "amount": 5}],
                     start_parameter="group_premium_30",

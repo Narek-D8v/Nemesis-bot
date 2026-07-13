@@ -122,9 +122,6 @@ class BayesClassifier:
         if total == 0:
             return False, 0.0
 
-        total_spam = self.spam_total / total
-        total_ham = self.ham_total / total
-
         unique_tokens = list(dict.fromkeys(tokens))
 
         async with aiosqlite.connect(self.db_path) as conn:
@@ -135,17 +132,23 @@ class BayesClassifier:
             )
             word_data = {row[0]: (row[1], row[2]) for row in await cursor.fetchall()}
 
-        log_spam = math.log(total_spam)
-        log_ham = math.log(total_ham)
+        alpha = 1.0
+        vocab_size = len(word_data) if word_data else 1
+
+        log_spam = math.log(self.spam_total / total)
+        log_ham = math.log(self.ham_total / total)
 
         for token in unique_tokens:
             if token in word_data:
                 w_spam, w_ham = word_data[token]
             else:
                 w_spam = w_ham = 0
-            spam_prob = max(0.01, min(0.99, (w_spam / total_spam) / ((w_spam / total_spam) + (w_ham / total_ham)))) if (w_spam + w_ham) > 0 else 0.4
-            log_spam += math.log(max(spam_prob, 1e-10))
-            log_ham += math.log(max(1 - spam_prob, 1e-10))
+            p_spam = (w_spam + alpha) / (self.spam_total + alpha * 2) if self.spam_total > 0 else 0.5
+            p_ham = (w_ham + alpha) / (self.ham_total + alpha * 2) if self.ham_total > 0 else 0.5
+            p_spam = max(1e-10, min(1 - 1e-10, p_spam))
+            p_ham = max(1e-10, min(1 - 1e-10, p_ham))
+            log_spam += math.log(p_spam)
+            log_ham += math.log(p_ham)
 
         try:
             spam_prob_val = math.exp(log_spam)
@@ -156,7 +159,9 @@ class BayesClassifier:
             confidence = spam_prob_val / total_prob
             return confidence > 0.5, confidence
         except OverflowError:
-            return True, 1.0
+            if log_spam > log_ham:
+                return True, 1.0
+            return False, 0.0
 
     async def get_stats(self) -> Dict:
         await self._load_counts()

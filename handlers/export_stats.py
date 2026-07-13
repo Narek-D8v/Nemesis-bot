@@ -17,6 +17,12 @@ async def cmd_export_stats(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
+    if message.chat.type in ("group", "supergroup"):
+        from handlers.messages import is_admin
+        if not await is_admin(chat_id, user_id):
+            await message.reply("❌ Только администраторы могут экспортировать статистику.")
+            return
+
     is_premium_user = await db.is_premium_user(user_id)
     is_premium_group = await db.is_premium_group(chat_id)
     if not is_premium_user and not is_premium_group:

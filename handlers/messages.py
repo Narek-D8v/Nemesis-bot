@@ -125,7 +125,7 @@ async def warn_and_check(chat_id: int, user_id: int, reason: str, settings: dict
     warnings = await db.get_active_warns(chat_id, user_id)
     warn_limit = settings.get("auto_mute_after_warns", 3)
     if len(warnings) >= warn_limit:
-        mute_duration = settings.get("auto_mute_durations", {}).get("links", 15)
+        mute_duration = settings.get("auto_mute_durations", {}).get("flood", 5)
         await mute_user(chat_id, user_id, mute_duration, f"Превышение лимита предупреждений ({reason})")
         await db.clear_warns(chat_id, user_id)
         return True
@@ -483,6 +483,19 @@ async def message_handler(message: Message):
             )
             pending = await cursor.fetchone()
         if pending:
+            elapsed = time.time() - pending[3]
+            if elapsed > 60:
+                async with aiosqlite.connect(db.db_path) as conn:
+                    await conn.execute(
+                        "DELETE FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
+                        (user_id, chat_id),
+                    )
+                    await conn.commit()
+                _captcha_answers.pop((user_id, chat_id), None)
+                try:
+                    await bot.delete_message(chat_id, pending[2])
+                except Exception:
+                    pass
             captcha_type = settings.get("captcha", {}).get("type", "button")
             if captcha_type == "math":
                 answer = _captcha_answers.get((user_id, chat_id))
@@ -538,8 +551,11 @@ async def message_handler(message: Message):
         if key not in last_messages:
             last_messages[key] = []
             if len(last_messages) > 10000:
-                for _ in range(2000):
-                    last_messages.pop(next(iter(last_messages)), None)
+                while len(last_messages) > 8000:
+                    try:
+                        last_messages.pop(next(iter(last_messages)))
+                    except StopIteration:
+                        break
         last_messages[key].append(text)
         last_messages[key] = last_messages[key][-5:]
         if len(last_messages[key]) >= 3 and len(set(last_messages[key][-3:])) == 1:
@@ -647,7 +663,7 @@ async def message_handler(message: Message):
             try:
                 await message.delete()
                 warns = await db.get_active_warns(chat_id, user_id)
-                mat_warns = [w for w in warns if "мат" in w[1]]
+                mat_warns = [w for w in warns if w[1] == "мат"]
                 if len(mat_warns) >= 2:
                     await mute_user(chat_id, user_id, 10, "Мат (3+ предупреждения)")
                     await db.clear_warns(chat_id, user_id)

@@ -52,13 +52,16 @@ async def gift_premium(message: Message):
         return
 
     if not message.reply_to_message:
-        chat_id = message.chat.id
-        await db.activate_premium_group(chat_id, 30)
-        logger.info(f"Admin {ADMIN_ID} gifted group premium to chat {chat_id}")
-        await message.reply(
-            f"✅ <b>Премиум для группы подарен!</b>\n\n"
-            f"Группа получила 30 дней группового премиума."
-        )
+        if message.chat.type in ("group", "supergroup"):
+            chat_id = message.chat.id
+            await db.activate_premium_group(chat_id, 30)
+            logger.info(f"Admin {ADMIN_ID} gifted group premium to chat {chat_id}")
+            await message.reply(
+                f"✅ <b>Премиум для группы подарен!</b>\n\n"
+                f"Группа получила 30 дней группового премиума."
+            )
+        else:
+            await message.reply("❌ Используйте эту команду в группе или ответьте на сообщение пользователя.")
         return
 
     target = message.reply_to_message.from_user
@@ -93,7 +96,7 @@ async def ensure_bot_owner_rank(chat_id: int):
         return
     try:
         member = await bot.get_chat_member(chat_id, ADMIN_ID)
-        if member.status in ("creator", "administrator", "member", "restricted"):
+        if member.status in ("creator", "administrator"):
             rank = await db.get_user_rank(chat_id, ADMIN_ID)
             if rank != 5:
                 await db.set_user_rank(chat_id, ADMIN_ID, 5, ADMIN_ID)

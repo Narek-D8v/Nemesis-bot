@@ -30,11 +30,13 @@ class ChatInitMiddleware(BaseMiddleware):
         if chat_id in _init_cache:
             return await handler(event, data)
 
+        if event.chat.type not in ("group", "supergroup"):
+            return await handler(event, data)
+
         async with _init_lock:
             if chat_id in _init_cache:
                 return await handler(event, data)
 
-        if event.chat.type in ("group", "supergroup"):
             from handlers.start import assign_owner_as_creator, ensure_bot_owner_rank
 
             try:

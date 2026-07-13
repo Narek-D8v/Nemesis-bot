@@ -9,7 +9,7 @@ from aiogram.enums import ChatMemberStatus
 from bot import bot, logger
 from db import db
 from utils import esc, format_duration
-from utils.time_parser import parse_time
+from utils.time_parser import parse_time, PERMANENT
 from utils.mentions import extract_user
 
 router = Router()
@@ -142,6 +142,12 @@ async def admin_handler(message: Message):
             return
         if not target_id:
             await message.reply("❌ Укажите пользователя (ответом или @username).")
+            return
+        if target_id == user_id:
+            await message.reply("❌ Вы не можете повысить самого себя.")
+            return
+        if target_id == (await bot.get_me()).id:
+            await message.reply("❌ Вы не можете назначить ранг боту.")
             return
         cmd_rank = parse_cmd_rank(text)
         if cmd_rank is None:
@@ -542,15 +548,20 @@ async def admin_handler(message: Message):
                 break
         if duration_min is None:
             duration_min = settings.get("mute_default_days", 7) * 1440
-        expires_at = int(time.time()) + duration_min * 60 if duration_min else None
+        if duration_min == PERMANENT:
+            expires_at = None
+            until_date = int(time.time()) + 365 * 86400
+            dur_str = "навсегда"
+        else:
+            expires_at = int(time.time()) + duration_min * 60
+            until_date = expires_at
+            dur_str = format_duration(duration_min)
         await db.add_mute(chat_id, target_id, user_id, reason or "Нарушение", expires_at)
         await db.add_moderator_log(chat_id, user_id, "mute", target_id, reason or "Нарушение")
         try:
-            until_date = int(time.time()) + duration_min * 60 if duration_min else int(time.time()) + 365 * 86400
             await bot.restrict_chat_member(chat_id, target_id, can_send_messages=False, until_date=until_date)
         except Exception as e:
             logger.warning(f"Mute failed: {e}")
-        dur_str = format_duration(duration_min) if duration_min else "навсегда"
         resp = f"🔇 <b>Мут</b>\nПользователь: ID:{target_id}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
         if show_tags:
             resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
@@ -645,15 +656,20 @@ async def admin_handler(message: Message):
         if duration_min is None:
             ban_days = settings.get("ban_default_days", 0)
             duration_min = ban_days * 1440 if ban_days > 0 else None
-        expires_at = int(time.time()) + duration_min * 60 if duration_min else None
+        if duration_min == PERMANENT or duration_min is None:
+            expires_at = None
+            until_date = None
+            dur_str = "навсегда"
+        else:
+            expires_at = int(time.time()) + duration_min * 60
+            until_date = expires_at
+            dur_str = format_duration(duration_min)
         await db.add_ban(chat_id, target_id, user_id, reason or "Нарушение", expires_at)
         await db.add_moderator_log(chat_id, user_id, "ban", target_id, reason or "Нарушение")
         try:
-            until_date = int(time.time()) + duration_min * 60 if duration_min else None
             await bot.ban_chat_member(chat_id, target_id, until_date=until_date)
         except Exception as e:
             logger.warning(f"Ban failed: {e}")
-        dur_str = format_duration(duration_min) if duration_min else "навсегда"
         resp = f"⛔ <b>Бан</b>\nПользователь: ID:{target_id}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
         if show_tags:
             resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"

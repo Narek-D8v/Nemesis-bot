@@ -55,8 +55,11 @@ async def on_startup():
     await db.init_db()
     logger.info("Database initialized")
 
-    await db.activate_premium_user(ADMIN_ID, 36500)
-    logger.info(f"Owner {ADMIN_ID} premium activated (100 years)")
+    if ADMIN_ID:
+        await db.activate_premium_user(ADMIN_ID, 36500)
+        logger.info(f"Owner {ADMIN_ID} premium activated (100 years)")
+    else:
+        logger.warning("ADMIN_ID is 0 — owner premium not activated. Set ADMIN_ID in .env")
 
     dp.message.middleware(ChatInitMiddleware())
     dp.message.middleware(AntiFloodMiddleware())

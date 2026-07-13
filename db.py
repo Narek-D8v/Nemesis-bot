@@ -1,3 +1,4 @@
+import copy
 import json
 import time
 import aiosqlite
@@ -305,8 +306,8 @@ class Database:
                 for key, val in DEFAULT_SETTINGS.items():
                     if key not in settings:
                         settings[key] = val
-                return settings
-            return dict(DEFAULT_SETTINGS)
+                return copy.deepcopy(settings)
+            return copy.deepcopy(DEFAULT_SETTINGS)
 
     async def save_settings(self, chat_id: int, settings: dict):
         async with aiosqlite.connect(self.db_path) as db:
@@ -354,20 +355,36 @@ class Database:
         await self.save_settings(chat_id, settings)
 
     async def activate_premium_user(self, user_id: int, days: int = 30):
-        expires_at = int(time.time()) + days * 86400
+        extra_seconds = days * 86400
         async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT expires_at FROM user_premium WHERE user_id = ?", (user_id,)
+            )
+            row = await cursor.fetchone()
+            if row and row[0] > int(time.time()):
+                new_expires_at = row[0] + extra_seconds
+            else:
+                new_expires_at = int(time.time()) + extra_seconds
             await db.execute(
                 "INSERT OR REPLACE INTO user_premium (user_id, expires_at) VALUES (?, ?)",
-                (user_id, expires_at),
+                (user_id, new_expires_at),
             )
             await db.commit()
 
     async def activate_premium_group(self, chat_id: int, days: int = 30):
-        expires_at = int(time.time()) + days * 86400
+        extra_seconds = days * 86400
         async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT expires_at FROM group_premium WHERE chat_id = ?", (chat_id,)
+            )
+            row = await cursor.fetchone()
+            if row and row[0] > int(time.time()):
+                new_expires_at = row[0] + extra_seconds
+            else:
+                new_expires_at = int(time.time()) + extra_seconds
             await db.execute(
                 "INSERT OR REPLACE INTO group_premium (chat_id, expires_at) VALUES (?, ?)",
-                (chat_id, expires_at),
+                (chat_id, new_expires_at),
             )
             await db.commit()
 
@@ -727,10 +744,11 @@ class Database:
             return await cursor.fetchall()
 
     async def delete_old_logs(self, days: int = 90) -> int:
+        cutoff = int(time.time()) - days * 86400
         async with aiosqlite.connect(self.db_path) as conn:
             cursor = await conn.execute(
-                "DELETE FROM moderator_logs WHERE created_at < strftime('%s', 'now') - ? * 86400",
-                (days,)
+                "DELETE FROM moderator_logs WHERE created_at < ?",
+                (cutoff,)
             )
             await conn.commit()
             return cursor.rowcount
@@ -891,7 +909,7 @@ class Database:
                 (chat_id, cutoff),
             )
             rows = await cursor.fetchall()
-            stats = {"bans": 0, "mutes": 0, "deletes": 0, "warns": 0}
+            stats = {"bans": 0, "mutes": 0, "deletes": 0, "warns": 0, "kicks": 0, "edits": 0}
             for action, cnt in rows:
                 if action == "ban":
                     stats["bans"] = cnt
@@ -901,6 +919,10 @@ class Database:
                     stats["deletes"] = cnt
                 elif action == "warn":
                     stats["warns"] = cnt
+                elif action == "kick":
+                    stats["kicks"] = cnt
+                elif action == "edit":
+                    stats["edits"] = cnt
             return stats
 
     async def get_top_violators(self, chat_id: int, period: str = "week", limit: int = 10) -> list:

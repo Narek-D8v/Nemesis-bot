@@ -2,6 +2,7 @@ import time
 import re
 import hashlib
 import os
+import asyncio
 
 from config import VIRUSTOTAL_API_KEY
 from bot import logger
@@ -20,6 +21,10 @@ SCANNABLE_EXTENSIONS = {
     '.msi', '.msp', '.cab', '.iso', '.img',
 }
 MAX_FILE_SIZE = 32 * 1024 * 1024
+
+_vt_rate_limit = asyncio.Lock()
+_vt_last_call: float = 0
+VT_MIN_INTERVAL = 16
 
 
 def extract_urls(text: str) -> list[str]:
@@ -45,6 +50,14 @@ async def check_url_safety(url: str):
         if now - ts < URL_CACHE_TTL:
             return stats
         del url_cache[url]
+
+    global _vt_last_call
+    async with _vt_rate_limit:
+        now_local = time.time()
+        since_last = now_local - _vt_last_call
+        if since_last < VT_MIN_INTERVAL:
+            await asyncio.sleep(VT_MIN_INTERVAL - since_last)
+        _vt_last_call = time.time()
 
     try:
         from vt import Client
@@ -81,6 +94,14 @@ async def check_file_safety(file_path: str, file_name: str = ""):
             logger.info(f"VirusTotal file cache hit: {sha256}")
             return stats
         del file_cache[sha256]
+
+    global _vt_last_call
+    async with _vt_rate_limit:
+        now_local = time.time()
+        since_last = now_local - _vt_last_call
+        if since_last < VT_MIN_INTERVAL:
+            await asyncio.sleep(VT_MIN_INTERVAL - since_last)
+        _vt_last_call = time.time()
 
     try:
         from vt import Client

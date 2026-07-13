@@ -61,10 +61,11 @@ def has_mask(text: str) -> bool:
     has_cyrillic = bool(re.search(r'[а-яё]', text, re.IGNORECASE))
     if not has_cyrillic:
         return False
-    normalized = normalize_text(text)
-    if normalized == text:
+    text_no_yo = text.replace('ё', 'е').replace('Ё', 'Е')
+    normalized = normalize_text(text_no_yo)
+    if normalized == text_no_yo:
         return False
-    diff_count = sum(1 for a, b in zip(text, normalized) if a != b)
+    diff_count = sum(1 for a, b in zip(text_no_yo, normalized) if a != b)
     return diff_count >= 2
 
 def _strip_non_alpha(text: str) -> str:
@@ -153,7 +154,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings.setdefault("filter_links", {})["action"] = "delete"
         settings["block_no_avatar"] = False
         settings["min_account_age_days"] = 1
-        settings.setdefault("captcha", {})["suspicious"] = False
+        settings["captcha_for_suspicious"] = False
         settings["duplicate_block"] = False
         settings["mention_block"] = False
     elif level == 1:
@@ -161,7 +162,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings.setdefault("filter_links", {})["action"] = "delete"
         settings["block_no_avatar"] = False
         settings["min_account_age_days"] = 3
-        settings.setdefault("captcha", {})["suspicious"] = False
+        settings["captcha_for_suspicious"] = False
         settings["duplicate_block"] = True
         settings["mention_block"] = False
     elif level == 2:
@@ -169,7 +170,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings.setdefault("filter_links", {})["action"] = "warn_mute"
         settings["block_no_avatar"] = True
         settings["min_account_age_days"] = 7
-        settings.setdefault("captcha", {})["suspicious"] = True
+        settings["captcha_for_suspicious"] = True
         settings["duplicate_block"] = True
         settings["mention_block"] = True
     elif level == 3:
@@ -177,7 +178,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings.setdefault("filter_links", {})["action"] = "ban"
         settings["block_no_avatar"] = True
         settings["min_account_age_days"] = 14
-        settings.setdefault("captcha", {})["suspicious"] = True
+        settings["captcha_for_suspicious"] = True
         settings["duplicate_block"] = True
         settings["mention_block"] = True
         settings["forward_block"] = True
