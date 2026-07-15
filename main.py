@@ -95,7 +95,7 @@ async def on_startup(plugin_manager: PluginManager | None = None):
 
     if plugin_manager:
         await plugin_manager.load_config()
-        plugin_manager._discover_and_register()
+        await plugin_manager._discover_and_register()
         logger.info(f"Plugin system: {len(plugin_manager.plugins)} plugins loaded")
         for name, p in plugin_manager.plugins.items():
             status = "✅" if p.is_enabled() else "❌"
