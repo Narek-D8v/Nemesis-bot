@@ -124,9 +124,9 @@ class PluginManager:
 
     async def load_all_plugins(self):
         await self.load_config()
-        self._discover_and_register()
+        await self._discover_and_register()
 
-    def _discover_and_register(self):
+    async def _discover_and_register(self):
         import importlib
         import pkgutil
         import plugins
@@ -139,10 +139,7 @@ class PluginManager:
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
                     if (isinstance(attr, type) and issubclass(attr, BasePlugin) and attr is not BasePlugin):
-                        import asyncio
-                        asyncio.get_event_loop().run_until_complete(
-                            self.register_plugin(attr)
-                        )
+                        await self.register_plugin(attr)
             except Exception as e:
                 logger.error(f"Failed to discover plugin '{modname}': {e}")
 
