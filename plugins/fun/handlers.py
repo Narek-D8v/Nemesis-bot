@@ -5,10 +5,10 @@ import time
 import aiosqlite
 from aiogram.types import Message
 
-from bot import bot, logger
 from db import db
 from utils import esc, format_duration
 from utils.mentions import extract_user
+from utils.user_name import resolve_name
 
 SHIP_CMD = re.compile(r'^шипперим\b', re.IGNORECASE)
 OPTOUT_CMD = re.compile(r'^[-+]\s*шип\s+меня\b', re.IGNORECASE)
@@ -73,7 +73,10 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
         lines = ["🌐 <b>Общий пейринг:</b>\n"]
         for u1, u2, sid, ts in rows:
             d = time.strftime("%d.%m", time.localtime(ts))
-            lines.append(f"• ID{u1} + ID{u2} (от ID{sid}, {d})")
+            n1 = await resolve_name(chat_id, u1)
+            n2 = await resolve_name(chat_id, u2)
+            ns = await resolve_name(chat_id, sid)
+            lines.append(f"• {n1} + {n2} (от {ns}, {d})")
         await message.reply("\n".join(lines))
         return True
 
@@ -90,7 +93,10 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
         lines = ["💞 <b>Пейринг чата:</b>\n"]
         for u1, u2, sid, ts in rows:
             d = time.strftime("%d.%m", time.localtime(ts))
-            lines.append(f"• ID{u1} + ID{u2} (от ID{sid}, {d})")
+            n1 = await resolve_name(chat_id, u1)
+            n2 = await resolve_name(chat_id, u2)
+            ns = await resolve_name(chat_id, sid)
+            lines.append(f"• {n1} + {n2} (от {ns}, {d})")
         await message.reply("\n".join(lines))
         return True
 
@@ -127,7 +133,8 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
                     (chat_id, uid)
                 )
                 if await cursor.fetchone():
-                    await message.reply(f"❌ Пользователь ID{uid} исключил себя из шипперинга.")
+                    uname = await resolve_name(chat_id, uid)
+                    await message.reply(f"❌ Пользователь {uname} исключил себя из шипперинга.")
                     return True
 
         async with aiosqlite.connect(db.db_path) as conn:
@@ -137,16 +144,8 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
             )
             await conn.commit()
 
-        try:
-            m1 = await bot.get_chat_member(chat_id, user1)
-            n1 = esc(m1.user.first_name or str(user1))
-        except Exception:
-            n1 = f"ID{user1}"
-        try:
-            m2 = await bot.get_chat_member(chat_id, user2)
-            n2 = esc(m2.user.first_name or str(user2))
-        except Exception:
-            n2 = f"ID{user2}"
+        n1 = await resolve_name(chat_id, user1)
+        n2 = await resolve_name(chat_id, user2)
 
         await message.reply(f"💞 {n1} + {n2} = ❤️ Шипперинг состоялся!")
         return True
@@ -253,11 +252,7 @@ async def handle_text_games(message: Message, chat_id: int, user_id: int, text: 
             )
             row = await cursor.fetchone()
         if row:
-            try:
-                member = await bot.get_chat_member(chat_id, row[0])
-                name = esc(member.user.first_name or str(row[0]))
-            except Exception:
-                name = f"ID{row[0]}"
+            name = await resolve_name(chat_id, row[0])
             await message.reply(f"👤 {esc(question)} — это <b>{name}</b>")
         else:
             await message.reply(f"👤 {esc(question)} — это <b>никто</b>")

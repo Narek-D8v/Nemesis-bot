@@ -9,6 +9,7 @@ from db import db
 from handlers.admin import is_mod_cmd
 from utils import esc
 from utils.mentions import extract_user
+from utils.user_name import resolve_name
 
 AWARD_CMD = re.compile(r'^наградить\b', re.IGNORECASE)
 ADD_GIVER_CMD = re.compile(r'^\+награждающий\b', re.IGNORECASE)
@@ -85,11 +86,7 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
                 (chat_id, target)
             )
             rows = await cursor.fetchall()
-        try:
-            member = await bot.get_chat_member(chat_id, target)
-            tname = esc(member.user.first_name or str(target))
-        except Exception:
-            tname = f"ID{target}"
+        tname = await resolve_name(chat_id, target)
         if not rows:
             await message.reply(f"У {tname} пока нет наград.")
             return True
@@ -117,7 +114,8 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
                 (chat_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Все награды пользователя ID{target} сняты.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Все награды пользователя {tname} сняты.")
         return True
 
     if REM_AWARDS_FROM_CMD.match(stripped):
@@ -136,7 +134,8 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
                 (chat_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Все награды, выданные пользователем ID{target}, сняты.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Все награды, выданные пользователем {tname}, сняты.")
         return True
 
     m = REM_AWARD_CMD.match(stripped)
@@ -162,7 +161,8 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
                 award_id = rows[award_num - 1][0]
                 await conn.execute("DELETE FROM awards_medals WHERE id = ?", (award_id,))
                 await conn.commit()
-                await message.reply(f"✅ Награда #{award_num} у ID{target} снята.")
+                tname = await resolve_name(chat_id, target)
+                await message.reply(f"✅ Награда #{award_num} у {tname} снята.")
             else:
                 await message.reply("❌ Награда с таким номером не найдена.")
         return True
@@ -179,11 +179,7 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
             return True
         lines = ["👑 <b>Награждающие:</b>\n"]
         for uid, md in rows:
-            try:
-                member = await bot.get_chat_member(chat_id, uid)
-                name = esc(member.user.first_name or str(uid))
-            except Exception:
-                name = f"ID{uid}"
+            name = await resolve_name(chat_id, uid)
             lines.append(f"• {name} — макс. степень {md}")
         await message.reply("\n".join(lines))
         return True
@@ -204,7 +200,8 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
                 (chat_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Пользователь ID{target} удалён из награждающих.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Пользователь {tname} удалён из награждающих.")
         return True
 
     if ADD_GIVER_CMD.match(stripped):
@@ -235,7 +232,8 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
                 (chat_id, target, max_degree)
             )
             await conn.commit()
-        await message.reply(f"✅ Пользователь ID{target} назначен награждающим (макс. степень {max_degree}).")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Пользователь {tname} назначен награждающим (макс. степень {max_degree}).")
         return True
 
     for restrict_pattern, cmd_type in [
@@ -347,11 +345,7 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
         dur_text = ""
         if expires_at:
             dur_text = f" (до {time.strftime('%d.%m.%Y', time.localtime(expires_at))})"
-        try:
-            tm = await bot.get_chat_member(chat_id, target)
-            tname = esc(tm.user.first_name or str(target))
-        except Exception:
-            tname = f"ID{target}"
+        tname = await resolve_name(chat_id, target)
         await message.reply(f"{emoji} <b>{name}</b> выдана {tname}!{dur_text}\n{esc(description)}")
 
         try:

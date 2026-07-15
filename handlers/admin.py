@@ -12,6 +12,7 @@ from core.plugin_hooks import get_hooks
 from utils import esc, format_duration
 from utils.time_parser import parse_time, PERMANENT
 from utils.mentions import extract_user
+from utils.user_name import resolve_name
 
 router = Router()
 
@@ -278,11 +279,7 @@ async def admin_handler(message: Message):
             return
         lines = ["👥 <b>Состав модерации:</b>\n"]
         for mid, rnk, ab, aa in mods:
-            try:
-                m = await bot.get_chat_member(chat_id, mid)
-                name = esc(m.user.first_name or str(mid))
-            except Exception:
-                name = f"ID:{mid}"
+            name = await resolve_name(chat_id, mid)
             rname = rank_names.get(str(rnk), RANK_NAMES.get(rnk, f"Ранг {rnk}"))
             lines.append(f"• {name} — {rname}")
         await message.reply("\n".join(lines))
@@ -300,11 +297,7 @@ async def admin_handler(message: Message):
             row = await cursor.fetchone()
         if row:
             ts = time.strftime("%d.%m.%Y %H:%M", time.localtime(row[1]))
-            try:
-                m = await bot.get_chat_member(chat_id, row[0])
-                aname = esc(m.user.first_name or str(row[0]))
-            except Exception:
-                aname = f"ID:{row[0]}"
+            aname = await resolve_name(chat_id, row[0])
             await message.reply(f"👤 Назначен: {aname}\n📅 {ts}")
         else:
             await message.reply("Пользователь не является модератором.")
@@ -339,7 +332,8 @@ async def admin_handler(message: Message):
         if not logs:
             await message.reply("Нет записей.")
             return
-        lines = [f"📋 <b>Лог для ID:{target_id}:</b>\n"]
+        tname = await resolve_name(chat_id, target_id)
+        lines = [f"📋 <b>Лог для {tname}:</b>\n"]
         for row in logs[-10:]:
             ts = time.strftime("%d.%m %H:%M", time.localtime(row[6]))
             lines.append(f"• [{ts}] <b>{row[3]}</b>: {row[5]}")
@@ -397,7 +391,8 @@ async def admin_handler(message: Message):
         await db.add_moderator_log(chat_id, user_id, "warn", target_id, reason)
         wcount = await db.count_active_warns(chat_id, target_id)
         wlimit = settings.get("warn_limit", 3)
-        resp = f"⚠️ <b>Предупреждение</b>\nПользователь: ID:{target_id}\nПричина: {esc(reason)}\nПредупреждений: {wcount}/{wlimit}"
+        tname = await resolve_name(chat_id, target_id)
+        resp = f"⚠️ <b>Предупреждение</b>\nПользователь: {tname}\nПричина: {esc(reason)}\nПредупреждений: {wcount}/{wlimit}"
         if show_tags:
             resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
         await message.reply(resp)
@@ -411,17 +406,19 @@ async def admin_handler(message: Message):
             await db.add_ban(chat_id, target_id, user_id, f"Достигнут лимит предупреждений ({wcount})", ban_expires)
             await bot.ban_chat_member(chat_id, target_id)
             await db.add_moderator_log(chat_id, user_id, "ban", target_id, "Лимит предупреждений")
-            await message.reply(f"⛔ Пользователь ID:{target_id} забанен (лимит предупреждений).")
+            tname = await resolve_name(chat_id, target_id)
+            await message.reply(f"⛔ Пользователь {tname} забанен (лимит предупреждений).")
             await db.clear_warns(chat_id, target_id)
         return
 
     if first_word in ('варны',) and len(text.split()) == 1 and not re.match(r'^варны\s+лимит', text, re.IGNORECASE) and not re.match(r'^варны\s+чс', text, re.IGNORECASE) and not re.match(r'^варны\s+период', text, re.IGNORECASE):
-        warns = await db.get_active_warns(chat_id, target_id or user_id)
         uid = target_id or user_id
+        warns = await db.get_active_warns(chat_id, uid)
+        uname = await resolve_name(chat_id, uid)
         if not warns:
-            await message.reply(f"У пользователя ID:{uid} нет активных предупреждений.")
+            await message.reply(f"У пользователя {uname} нет активных предупреждений.")
             return
-        lines = [f"⚠️ <b>Предупреждения ID:{uid}</b>\n"]
+        lines = [f"⚠️ <b>Предупреждения {uname}</b>\n"]
         for i, (wid, wreason, wcreated, wexpires, wmod) in enumerate(warns, 1):
             ts = time.strftime("%d.%m.%Y", time.localtime(wcreated))
             lines.append(f"{i}. {esc(wreason)} ({ts})")
@@ -448,7 +445,8 @@ async def admin_handler(message: Message):
         lines = ["📋 <b>Список предупреждений:</b>\n"]
         for row in warns[:15]:
             ts = time.strftime("%d.%m %H:%M", time.localtime(row[5]))
-            lines.append(f"• ID:{row[2]} — {esc(row[4])} ({ts})")
+            wn = await resolve_name(chat_id, row[2])
+            lines.append(f"• {wn} — {esc(row[4])} ({ts})")
         await message.reply("\n".join(lines))
         return
 
@@ -461,7 +459,8 @@ async def admin_handler(message: Message):
             return
         if await db.remove_last_warn(chat_id, target_id):
             await db.add_moderator_log(chat_id, user_id, "unwarn", target_id, "снято последнее")
-            await message.reply(f"✅ Последнее предупреждение снято с ID:{target_id}.")
+            tname = await resolve_name(chat_id, target_id)
+            await message.reply(f"✅ Последнее предупреждение снято с {tname}.")
         else:
             await message.reply("❌ Нет активных предупреждений.")
         return
@@ -478,7 +477,8 @@ async def admin_handler(message: Message):
                 return
             await db.clear_warns(chat_id, target_id)
             await db.add_moderator_log(chat_id, user_id, "unwarn", target_id, "все сняты")
-            await message.reply(f"✅ Все предупреждения сняты с ID:{target_id}.")
+            tname = await resolve_name(chat_id, target_id)
+            await message.reply(f"✅ Все предупреждения сняты с {tname}.")
             return
         m = re.match(r'номер\s+(\d+)\s+', rest, re.IGNORECASE)
         if m:
@@ -580,7 +580,8 @@ async def admin_handler(message: Message):
             await bot.restrict_chat_member(chat_id, target_id, can_send_messages=False, until_date=until_date)
         except Exception as e:
             logger.warning(f"Mute failed: {e}")
-        resp = f"🔇 <b>Мут</b>\nПользователь: ID:{target_id}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
+        tname = await resolve_name(chat_id, target_id)
+        resp = f"🔇 <b>Мут</b>\nПользователь: {tname}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
         if show_tags:
             resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
         await message.reply(resp)
@@ -603,7 +604,8 @@ async def admin_handler(message: Message):
         except Exception as e:
             logger.warning(f"Unmute failed: {e}")
         await db.add_moderator_log(chat_id, user_id, "unmute", target_id, "мут снят")
-        await message.reply(f"✅ Мут снят с ID:{target_id}.")
+        tname = await resolve_name(chat_id, target_id)
+        await message.reply(f"✅ Мут снят с {tname}.")
         try:
             await bot.send_message(target_id, "✅ С вас снят мут в группе.")
         except Exception:
@@ -625,7 +627,8 @@ async def admin_handler(message: Message):
                 dur = format_duration(left // 60)
             else:
                 dur = "навсегда"
-            lines.append(f"• ID:{mid} — {dur} ({esc(mreason[:30])})")
+            mname = await resolve_name(chat_id, mid)
+            lines.append(f"• {mname} — {dur} ({esc(mreason[:30])})")
         await message.reply("\n".join(lines))
         return
 
@@ -634,15 +637,16 @@ async def admin_handler(message: Message):
             await message.reply("❌ Укажите пользователя.")
             return
         m = await db.get_active_mute(chat_id, target_id)
+        tname = await resolve_name(chat_id, target_id)
         if m:
             mexp = m[3]
             if mexp:
                 left = format_duration(max(0, mexp - int(time.time())) // 60)
-                await message.reply(f"🔇 Пользователь ID:{target_id} в муте. Осталось: {left}")
+                await message.reply(f"🔇 Пользователь {tname} в муте. Осталось: {left}")
             else:
-                await message.reply(f"🔇 Пользователь ID:{target_id} в муте. Бессрочно.")
+                await message.reply(f"🔇 Пользователь {tname} в муте. Бессрочно.")
         else:
-            await message.reply(f"✅ Пользователь ID:{target_id} не в муте.")
+            await message.reply(f"✅ Пользователь {tname} не в муте.")
         return
 
     if text.lower().startswith('мут период'):
@@ -691,7 +695,8 @@ async def admin_handler(message: Message):
             await bot.ban_chat_member(chat_id, target_id, until_date=until_date)
         except Exception as e:
             logger.warning(f"Ban failed: {e}")
-        resp = f"⛔ <b>Бан</b>\nПользователь: ID:{target_id}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
+        tname = await resolve_name(chat_id, target_id)
+        resp = f"⛔ <b>Бан</b>\nПользователь: {tname}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
         if show_tags:
             resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
         await message.reply(resp)
@@ -714,7 +719,8 @@ async def admin_handler(message: Message):
         except Exception as e:
             logger.warning(f"Unban failed: {e}")
         await db.add_moderator_log(chat_id, user_id, "unban", target_id, "разбанен")
-        await message.reply(f"✅ Пользователь ID:{target_id} разбанен.")
+        tname = await resolve_name(chat_id, target_id)
+        await message.reply(f"✅ Пользователь {tname} разбанен.")
         return
 
     if text.lower().startswith('!амнистия'):
@@ -737,16 +743,13 @@ async def admin_handler(message: Message):
         ban = await db.get_active_ban(chat_id, target_id)
         if ban:
             ts = time.strftime("%d.%m.%Y %H:%M", time.localtime(ban[2]))
-            try:
-                m = await bot.get_chat_member(chat_id, ban[4])
-                mname = esc(m.user.first_name or str(ban[4]))
-            except Exception:
-                mname = f"ID:{ban[4]}"
+            mname = await resolve_name(chat_id, ban[4])
             dur = "навсегда"
             if ban[3]:
                 left = max(0, ban[3] - int(time.time())) // 60
                 dur = format_duration(left)
-            await message.reply(f"⛔ <b>Причина бана ID:{target_id}</b>\nМодератор: {mname}\nПричина: {esc(ban[1])}\nСрок: {dur}\nДата: {ts}")
+            tname = await resolve_name(chat_id, target_id)
+            await message.reply(f"⛔ <b>Причина бана {tname}</b>\nМодератор: {mname}\nПричина: {esc(ban[1])}\nСрок: {dur}\nДата: {ts}")
         else:
             await message.reply("Пользователь не забанен.")
         return
@@ -766,7 +769,8 @@ async def admin_handler(message: Message):
                 dur = format_duration(left // 60)
             else:
                 dur = "навсегда"
-            lines.append(f"• ID:{bid} — {dur} ({esc(breason[:30])})")
+            bname = await resolve_name(chat_id, bid)
+            lines.append(f"• {bname} — {dur} ({esc(breason[:30])})")
         await message.reply("\n".join(lines))
         return
 
@@ -846,17 +850,14 @@ async def admin_handler(message: Message):
             await message.reply("❌ Укажите наследника (ответом или @username).")
             return
         await db.add_inheritance(chat_id, user_id, target_id)
-        await message.reply(f"✅ Завещание оставлено на пользователя ID:{target_id}.")
+        tname = await resolve_name(chat_id, target_id)
+        await message.reply(f"✅ Завещание оставлено на пользователя {tname}.")
         return
 
     if text.lower().startswith('моё завещание') or text.lower().startswith('мое завещание'):
         inh = await db.get_inheritance(chat_id, user_id)
         if inh:
-            try:
-                m = await bot.get_chat_member(chat_id, inh[0])
-                hname = esc(m.user.first_name or str(inh[0]))
-            except Exception:
-                hname = f"ID:{inh[0]}"
+            hname = await resolve_name(chat_id, inh[0])
             ts = time.strftime("%d.%m.%Y", time.localtime(inh[1]))
             await message.reply(f"📜 Ваше завещание: {hname} (от {ts})")
         else:
@@ -899,7 +900,8 @@ async def admin_handler(message: Message):
                 return
             await db.set_user_rank(chat_id, target_id, 5, user_id)
             await db.set_user_rank(chat_id, user_id, 4, user_id)
-            await message.reply(f"✅ Права создателя переданы ID:{target_id}.")
+            tname = await resolve_name(chat_id, target_id)
+            await message.reply(f"✅ Права создателя переданы {tname}.")
         else:
             await message.reply("❌ Только создатель может передать права.")
         return

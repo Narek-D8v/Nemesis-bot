@@ -8,6 +8,7 @@ from bot import bot, logger
 from db import db
 from utils import esc
 from utils.mentions import extract_user
+from utils.user_name import resolve_name
 
 ANKETA_CMD = re.compile(r'^(моя\s+)?анкета\b', re.IGNORECASE)
 TOGGLE_ANKETA = re.compile(r'^[+-]анкета\b', re.IGNORECASE)
@@ -146,7 +147,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             row = await cursor.fetchone()
         if row and row[0]:
             dt = time.strftime("%d.%m.%Y %H:%M", time.localtime(row[0]))
-            await message.reply(f"📅 Регистрация ID{target}: {dt}")
+            tname = await resolve_name(chat_id, target)
+            await message.reply(f"📅 Регистрация {tname}: {dt}")
         else:
             await message.reply("📅 Пользователь не найден в системе.")
         return True
@@ -163,21 +165,13 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target,)
             )
             rows = await cursor.fetchall()
-        try:
-            tm = await bot.get_chat_member(chat_id, target)
-            tn = esc(tm.user.first_name or str(target))
-        except Exception:
-            tn = f"ID{target}"
+        tn = await resolve_name(chat_id, target)
         if not rows:
             await message.reply(f"У {tn} пока нет подписчиков.")
             return True
         names = []
         for (sid,) in rows:
-            try:
-                sm = await bot.get_chat_member(chat_id, sid)
-                names.append(esc(sm.user.first_name or str(sid)))
-            except Exception:
-                names.append(f"ID{sid}")
+            names.append(await resolve_name(chat_id, sid))
         await message.reply(f"📋 <b>Подписки {tn}:</b>\n" + ", ".join(names))
         return True
 
@@ -193,11 +187,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         names = []
         for (sid,) in rows:
-            try:
-                sm = await bot.get_chat_member(chat_id, sid)
-                names.append(esc(sm.user.first_name or str(sid)))
-            except Exception:
-                names.append(f"ID{sid}")
+            names.append(await resolve_name(chat_id, sid))
         await message.reply(f"📋 <b>Ваши подписчики:</b>\n" + ", ".join(names))
         return True
 
@@ -213,11 +203,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         names = []
         for (tid,) in rows:
-            try:
-                tm = await bot.get_chat_member(chat_id, tid)
-                names.append(esc(tm.user.first_name or str(tid)))
-            except Exception:
-                names.append(f"ID{tid}")
+            names.append(await resolve_name(chat_id, tid))
         await message.reply(f"📋 <b>Ваши подписки:</b>\n" + ", ".join(names))
         return True
 
@@ -235,11 +221,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         lines = ["📊 <b>Сабы чата:</b>\n"]
         for i, (uid, cnt) in enumerate(rows, 1):
-            try:
-                mm = await bot.get_chat_member(chat_id, uid)
-                nm = esc(mm.user.first_name or str(uid))
-            except Exception:
-                nm = f"ID{uid}"
+            nm = await resolve_name(chat_id, uid)
             lines.append(f"{i}. {nm} — {cnt}")
         await message.reply("\n".join(lines))
         return True
@@ -256,7 +238,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         lines = ["🌍 <b>Все сабы Вселенной:</b>\n"]
         for i, (uid, cnt) in enumerate(rows, 1):
-            lines.append(f"{i}. ID{uid} — {cnt} подписчиков")
+            nm = await resolve_name(chat_id, uid)
+            lines.append(f"{i}. {nm} — {cnt} подписчиков")
         await message.reply("\n".join(lines))
         return True
 
@@ -306,7 +289,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (user_id, target, int(time.time()))
             )
             await conn.commit()
-        await message.reply(f"✅ Вы подписались на пользователя ID{target}.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Вы подписались на пользователя {tname}.")
         return True
 
     m = UNSUBSCRIBE.match(stripped)
@@ -321,7 +305,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (user_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Вы отписались от пользователя ID{target}.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Вы отписались от пользователя {tname}.")
         return True
 
     if TOGGLE_ACHIEVES.match(stripped):
@@ -356,11 +341,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target,)
             )
             rows = await cursor.fetchall()
-        try:
-            tm = await bot.get_chat_member(chat_id, target)
-            tn = esc(tm.user.first_name or str(target))
-        except Exception:
-            tn = f"ID{target}"
+        tn = await resolve_name(chat_id, target)
         if not rows:
             await message.reply(f"У {tn} пока нет ачивок.")
             return True
@@ -420,11 +401,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         names = []
         for (uid,) in rows:
-            try:
-                mm = await bot.get_chat_member(chat_id, uid)
-                names.append(esc(mm.user.first_name or str(uid)))
-            except Exception:
-                names.append(f"ID{uid}")
+            names.append(await resolve_name(chat_id, uid))
         await message.reply(f"🏡 <b>Граждане чата:</b>\n" + ", ".join(names))
         return True
 
@@ -446,7 +423,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target,)
             )
             await conn.commit()
-        await message.reply(f"✅ Описание пользователя ID{target} удалено.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Описание пользователя {tname} удалено.")
         return True
 
     m = ADMIN_SET_DESCR.match(stripped)
@@ -476,7 +454,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target, descr_text, descr_text)
             )
             await conn.commit()
-        await message.reply(f"✅ Описание пользователя ID{target} обновлено.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Описание пользователя {tname} обновлено.")
         return True
 
     if RM_O_SEBE.match(stripped):
@@ -531,11 +510,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target,)
             )
             row = await cursor.fetchone()
-        try:
-            tm = await bot.get_chat_member(chat_id, target)
-            tn = esc(tm.user.first_name or str(target))
-        except Exception:
-            tn = f"ID{target}"
+        tn = await resolve_name(chat_id, target)
         descr = row[0] if row and row[0] else "Описание не задано."
         await message.reply(f"📝 <b>Описание {tn}:</b>\n{esc(descr[:500])}")
         return True
@@ -634,11 +609,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             row = await cursor.fetchone()
-        try:
-            tm = await bot.get_chat_member(chat_id, target)
-            tn = esc(tm.user.first_name or str(target))
-        except Exception:
-            tn = f"ID{target}"
+        tn = await resolve_name(chat_id, target)
         nick = row[0] if row and row[0] else "не установлен"
         await message.reply(f"👤 <b>Ник {tn}:</b> {esc(nick)}")
         return True
@@ -685,7 +656,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target, nick, nick)
             )
             await conn.commit()
-        await message.reply(f"✅ Ник ID{target} установлен: {esc(nick)}")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Ник {tname} установлен: {esc(nick)}")
         return True
 
     m = ADMIN_RM_NICK.match(stripped)
@@ -706,7 +678,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Ник ID{target} удалён.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Ник {tname} удалён.")
         return True
 
     m = SET_TITLE.match(stripped)
@@ -746,11 +719,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             row = await cursor.fetchone()
-        try:
-            tm = await bot.get_chat_member(chat_id, target)
-            tn = esc(tm.user.first_name or str(target))
-        except Exception:
-            tn = f"ID{target}"
+        tn = await resolve_name(chat_id, target)
         t = row[0] if row and row[0] else "не установлено"
         await message.reply(f"🎖️ <b>Звание {tn}:</b> {esc(t)}")
         return True
@@ -792,7 +761,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target, title, title)
             )
             await conn.commit()
-        await message.reply(f"✅ Звание ID{target} установлено: {esc(title)}")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Звание {tname} установлено: {esc(title)}")
         return True
 
     m = ADMIN_RM_TITLE.match(stripped)
@@ -813,7 +783,8 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Звание ID{target} удалено.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Звание {tname} удалено.")
         return True
 
     m = SET_MOTTO.match(stripped)
@@ -984,11 +955,7 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
         await message.reply("🔒 Пользователь скрыл свою анкету.")
         return
 
-    try:
-        m = await bot.get_chat_member(chat_id, target_id)
-        name = esc(m.user.first_name or str(target_id))
-    except Exception:
-        name = f"ID{target_id}"
+    name = await resolve_name(chat_id, target_id)
 
     lines = [f"👤 <b>{name}</b>"]
     if pcr:

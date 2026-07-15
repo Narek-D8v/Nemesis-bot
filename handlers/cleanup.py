@@ -5,12 +5,13 @@ import asyncio
 from aiogram import Router, F
 from aiogram.types import Message
 
-from bot import bot, logger
+from bot import bot
 from db import db
 from utils import esc
 from utils.time_parser import parse_time
 from utils.mentions import extract_user
 from utils.chat_utils import delete_messages, get_messages_above, get_messages_below, kick_user
+from utils.user_name import resolve_name
 
 router = Router()
 
@@ -150,7 +151,8 @@ async def cleanup_handler(message: Message):
             await db.add_kick(chat_id, target_id, user_id, reason)
             await db.add_moderator_log(chat_id, user_id, "kick", target_id, reason)
             if await kick_user(chat_id, target_id):
-                resp = f"👢 Пользователь ID:{target_id} кикнут."
+                tname = await resolve_name(chat_id, target_id)
+                resp = f"👢 Пользователь {tname} кикнут."
                 if show_tags:
                     resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
                 await message.reply(resp)
@@ -338,10 +340,11 @@ async def cleanup_handler(message: Message):
         users = await db.get_users_by_msg_count(chat_id, min_count=0)
         deleted_list = []
         for did, dcount, dtime in users:
+            dname = await resolve_name(chat_id, did)
             try:
                 member = await bot.get_chat_member(chat_id, did)
                 if member.user.is_deleted:
-                    deleted_list.append(f"ID:{did}")
+                    deleted_list.append(dname)
             except Exception:
                 pass
         if deleted_list:

@@ -6,7 +6,7 @@ from aiogram.types import Message
 
 from bot import bot, logger
 from db import db
-from utils import esc
+from utils.user_name import resolve_name
 
 PLUS_VOTE = re.compile(r'^[+](\d*)$')
 MINUS_VOTE = re.compile(r'^[-](\d+)$')
@@ -191,11 +191,7 @@ async def handle_rating_commands(message: Message, chat_id: int, user_id: int, t
                 (chat_id, target)
             )
             row = await cursor.fetchone()
-        try:
-            member = await bot.get_chat_member(chat_id, target)
-            name = esc(member.user.first_name or str(target))
-        except Exception:
-            name = f"ID{target}"
+        name = await resolve_name(chat_id, target)
         if row:
             await message.reply(f"⭐ <b>Звёздность {name}</b>\nЗвёзды: {row[0]}")
         else:
@@ -227,11 +223,7 @@ async def handle_rating_commands(message: Message, chat_id: int, user_id: int, t
             return True
         lines = ["⭐ <b>Звёзды чата:</b>\n"]
         for i, (uid, s) in enumerate(rows, 1):
-            try:
-                member = await bot.get_chat_member(chat_id, uid)
-                name = esc(member.user.first_name or str(uid))
-            except Exception:
-                name = f"ID{uid}"
+            name = await resolve_name(chat_id, uid)
             lines.append(f"{i}. {name} — {s} ⭐")
         await message.reply("\n".join(lines))
         return True
@@ -247,7 +239,8 @@ async def handle_rating_commands(message: Message, chat_id: int, user_id: int, t
             return True
         lines = ["🌌 <b>Общий рейтинг звёздности:</b>\n"]
         for i, (uid, total) in enumerate(rows, 1):
-            lines.append(f"{i}. ID{uid} — {total} ⭐")
+            name = await resolve_name(chat_id, uid)
+            lines.append(f"{i}. {name} — {total} ⭐")
         await message.reply("\n".join(lines))
         return True
 
@@ -263,11 +256,7 @@ async def handle_rating_commands(message: Message, chat_id: int, user_id: int, t
             return True
         lines = ["🏆 <b>Рейтинг чата:</b>\n"]
         for i, (uid, r) in enumerate(rows, 1):
-            try:
-                member = await bot.get_chat_member(chat_id, uid)
-                name = esc(member.user.first_name or str(uid))
-            except Exception:
-                name = f"ID{uid}"
+            name = await resolve_name(chat_id, uid)
             emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "•"
             lines.append(f"{emoji} {name} — {r}")
         await message.reply("\n".join(lines))

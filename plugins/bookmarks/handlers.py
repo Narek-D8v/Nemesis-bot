@@ -5,10 +5,10 @@ import aiosqlite
 from aiogram.types import Message
 
 
-from bot import bot, logger
 from db import db
 from utils import esc
 from utils.mentions import extract_user
+from utils.user_name import resolve_name
 
 ADD_BOOKMARK_CMD = re.compile(r'^\+закладка\s+', re.IGNORECASE)
 SHOW_BOOKMARK_CMD = re.compile(r'^закладка\s+(\d+)$', re.IGNORECASE)
@@ -113,11 +113,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
             rows = await cursor.fetchall()
             if num <= len(rows):
                 title, content, owner_id, msg_id, created_at = rows[num - 1]
-                try:
-                    member = await bot.get_chat_member(chat_id, owner_id)
-                    owner_name = esc(member.user.first_name or str(owner_id))
-                except Exception:
-                    owner_name = f"ID{owner_id}"
+                owner_name = await resolve_name(chat_id, owner_id)
                 d = time.strftime("%d.%m.%Y", time.localtime(created_at))
                 link = ""
                 if msg_id:
@@ -161,11 +157,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
         total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
         lines = [f"📖 <b>Чатбук</b> (стр. {page}/{total_pages}):\n"]
         for i, (title, owner_id, created_at) in enumerate(rows, offset + 1):
-            try:
-                member = await bot.get_chat_member(chat_id, owner_id)
-                oname = esc(member.user.first_name or str(owner_id))
-            except Exception:
-                oname = f"ID{owner_id}"
+            oname = await resolve_name(chat_id, owner_id)
             lines.append(f"{i}. <b>{esc(title)}</b> — {oname}")
         await message.reply("\n".join(lines))
         return True
@@ -228,11 +220,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
                 (chat_id, target)
             )
             total = (await cursor2.fetchone())[0]
-        try:
-            member = await bot.get_chat_member(chat_id, target)
-            tname = esc(member.user.first_name or str(target))
-        except Exception:
-            tname = f"ID{target}"
+        tname = await resolve_name(chat_id, target)
         if not rows:
             await message.reply(f"У {tname} нет закладок.")
             return True
@@ -264,7 +252,8 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
                 (chat_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Закладки пользователя ID{target} возвращены в чатбук.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Закладки пользователя {tname} возвращены в чатбук.")
         return True
 
     if REM_CLADMEN_CMD.match(stripped):
@@ -287,7 +276,8 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
                 (chat_id, target)
             )
             await conn.commit()
-        await message.reply(f"✅ Закладки пользователя ID{target} скрыты из чатбука.")
+        tname = await resolve_name(chat_id, target)
+        await message.reply(f"✅ Закладки пользователя {tname} скрыты из чатбука.")
         return True
 
     return False
