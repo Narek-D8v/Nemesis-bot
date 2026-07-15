@@ -1,0 +1,80 @@
+plugins:
+  example:
+    enabled: true
+    version: 1.0.0
+    settings:
+      greeting: "Привет, мир!"
+
+  moderation:
+    enabled: true
+    version: 1.0.0
+    settings:
+      auto_mute_after_warns: 3
+      warn_expire_days: 30
+
+  antispam:
+    enabled: true
+    version: 1.0.0
+    settings:
+      bayes_enabled: true
+      bayes_threshold: 0.7
+      antispam_threshold: 5
+
+  premium:
+    enabled: true
+    version: 1.0.0
+    settings:
+      personal_stars: 10
+      group_stars: 5
+
+  fun:
+    enabled: true
+    version: 1.0.0
+    settings:
+      shipping_enabled: true
+      text_games_enabled: true
+      ping_enabled: true
+
+  reputation:
+    enabled: true
+    version: 1.0.0
+    settings:
+      max_vote_by_rank:
+        0: 1
+        1: 3
+        2: 5
+        3: 10
+        4: 20
+        5: 50
+      rating_tax_percent: 5
+      rating_tax_days: 3
+
+  awards:
+    enabled: true
+    version: 1.0.0
+    settings:
+      max_givers: 10
+
+  bookmarks:
+    enabled: true
+    version: 1.0.0
+    settings:
+      items_per_page: 10
+
+  profile:
+    enabled: true
+    version: 1.0.0
+    settings:
+      nick_max: 30
+      title_max: 30
+      motto_max: 100
+      descr_max: 3800
+      max_subscriptions: 50
+
+  mentions:
+    enabled: true
+    version: 1.0.0
+    settings:
+      lurker_days: 14
+      mention_batch_size: 10
+      max_mentions: 50
