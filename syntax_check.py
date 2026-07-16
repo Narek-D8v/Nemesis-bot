@@ -14,6 +14,7 @@ files = [
     "handlers/callbacks/settings.py",
     "handlers/callbacks/admin.py",
     "handlers/callbacks/common.py",
+    "handlers/easter_egg.py",
     "handlers/messages.py",
 ]
 

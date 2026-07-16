@@ -13,7 +13,7 @@ from db import db
 from middlewares import AntiFloodMiddleware, NightModeMiddleware, ChatInitMiddleware
 from core.plugin_manager import PluginManager
 
-from handlers import start, callbacks, messages, state_handlers, payments, admin, cleanup, commands, scan, export_stats
+from handlers import start, easter_egg, callbacks, messages, state_handlers, payments, admin, cleanup, commands, scan, export_stats
 from config import ADMIN_ID
 
 
@@ -80,6 +80,7 @@ async def on_startup(plugin_manager: PluginManager | None = None):
     dp.message.middleware(AntiFloodMiddleware())
     dp.message.middleware(NightModeMiddleware())
 
+    dp.include_router(easter_egg.router)
     dp.include_router(start.router)
     dp.include_router(commands.router)
     dp.include_router(scan.router)
