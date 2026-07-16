@@ -21,6 +21,8 @@ from handlers.states import SettingsStates
 from handlers.messages import is_admin
 from handlers import _pending_edits, _captcha_answers
 
+from .common import safe_edit
+
 router = Router()
 
 from . import settings as settings_module
@@ -28,13 +30,6 @@ from . import admin as admin_module
 
 router.include_router(settings_module.router)
 router.include_router(admin_module.router)
-
-
-async def safe_edit(callback: CallbackQuery, text: str, reply_markup=None):
-    try:
-        await callback.message.edit_text(text, reply_markup=reply_markup)
-    except Exception:
-        pass
 
 
 @router.callback_query(lambda c: c.data.startswith("menu:"))

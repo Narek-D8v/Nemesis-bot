@@ -12,7 +12,7 @@ from keyboards import (
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
 from handlers import _pending_edits
-from . import safe_edit
+from .common import safe_edit
 
 router = Router()
 
