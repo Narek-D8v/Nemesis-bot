@@ -290,6 +290,13 @@ class Database:
                     msg_count INTEGER DEFAULT 0,
                     PRIMARY KEY (chat_id, user_id)
                 );
+                CREATE TABLE IF NOT EXISTS username_cache (
+                    chat_id INTEGER,
+                    username TEXT,
+                    user_id INTEGER,
+                    updated_at INTEGER,
+                    PRIMARY KEY (chat_id, username)
+                );
             """)
             await db.commit()
 
@@ -940,6 +947,32 @@ class Database:
                 (chat_id, cutoff, limit),
             )
             return await cursor.fetchall()
+
+    async def cache_username(self, chat_id: int, user_id: int, username: str):
+        now = int(time.time())
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "INSERT OR REPLACE INTO username_cache (chat_id, username, user_id, updated_at) VALUES (?, ?, ?, ?)",
+                (chat_id, username, user_id, now)
+            )
+            await conn.commit()
+
+    async def resolve_username_from_cache(self, chat_id: int, username: str) -> int | None:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT user_id FROM username_cache WHERE chat_id = ? AND username = ?",
+                (chat_id, username)
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+    async def delete_username_cache(self, chat_id: int, username: str):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "DELETE FROM username_cache WHERE chat_id = ? AND username = ?",
+                (chat_id, username)
+            )
+            await conn.commit()
 
 
 db = Database()

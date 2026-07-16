@@ -4,8 +4,15 @@ import sys
 files = [
     "utils/chat_utils.py",
     "db.py",
-    "handlers/admin.py",
-    "handlers/callbacks.py",
+    "handlers/admin/__init__.py",
+    "handlers/admin/common.py",
+    "handlers/admin/ranks.py",
+    "handlers/admin/warns.py",
+    "handlers/admin/punish.py",
+    "handlers/admin/misc.py",
+    "handlers/callbacks/__init__.py",
+    "handlers/callbacks/settings.py",
+    "handlers/callbacks/admin.py",
     "handlers/messages.py",
 ]
 
