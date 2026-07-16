@@ -13,6 +13,7 @@ files = [
     "handlers/callbacks/__init__.py",
     "handlers/callbacks/settings.py",
     "handlers/callbacks/admin.py",
+    "handlers/callbacks/common.py",
     "handlers/messages.py",
 ]
 
