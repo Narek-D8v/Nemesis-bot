@@ -90,6 +90,8 @@ async def gift_premium(message: Message):
 
 RANK_NAMES = {0: "Участник", 1: "Мл.Модер", 2: "Ст.Модер", 3: "Мл.Админ", 4: "Ст.Админ", 5: "Создатель"}
 
+_notified_owners: set[int] = set()
+
 
 async def ensure_bot_owner_rank(chat_id: int):
     if ADMIN_ID == 0:
@@ -121,6 +123,8 @@ async def assign_owner_as_creator(chat_id: int):
         if rank != 5:
             await db.set_user_rank(chat_id, owner.id, 5, owner.id)
             logger.info(f"Owner {owner.id} assigned as creator (rank 5) in chat {chat_id}")
+        if owner.id not in _notified_owners:
+            _notified_owners.add(owner.id)
             try:
                 await bot.send_message(
                     owner.id,

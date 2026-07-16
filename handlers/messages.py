@@ -75,13 +75,18 @@ NEMUSYA_REPLIES = [
 @router.message(lambda msg: msg.text and msg.text.lower().strip() == 'немуся')
 async def nemusya_reply(message: Message):
     if message.from_user is None:
+        logger.debug(f"nemusya_reply: no from_user (chat={message.chat.id})")
         return
     if message.from_user.is_bot:
+        logger.debug(f"nemusya_reply: from_user is bot (chat={message.chat.id})")
         return
     username = esc(message.from_user.first_name or "дорогой пользователь")
     reply = random.choice(NEMUSYA_REPLIES)
-    logger.info(f"Easter egg triggered: 'Немуся' by {message.from_user.id} in {message.chat.id}")
-    await message.reply(f"{reply} {username}!")
+    logger.info(f"Easter egg triggered: 'Немуся' by {message.from_user.id} in {message.chat.id} (type={message.chat.type})")
+    try:
+        await message.reply(f"{reply} {username}!")
+    except Exception as e:
+        logger.error(f"nemusya_reply: message.reply failed: {e}")
 
 
 async def is_admin(chat_id: int, user_id: int) -> bool:
