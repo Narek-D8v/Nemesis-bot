@@ -29,6 +29,7 @@ from keyboards import (
 )
 from bayes import BayesClassifier
 from utils.virustotal import check_file_safety, SCANNABLE_EXTENSIONS
+from utils.mentions import cache_user_from_message, cache_user_from_member
 from handlers import _pending_edits, _captcha_answers
 from core.plugin_hooks import get_hooks
 
@@ -221,6 +222,8 @@ async def send_captcha(chat_id: int, user_id: int):
 async def on_user_join(event: ChatMemberUpdated):
     chat_id = event.chat.id
     user = event.new_chat_member.user
+
+    await cache_user_from_member(chat_id, user.id, user.username)
 
     settings = await db.get_settings(chat_id)
 
@@ -469,6 +472,8 @@ async def message_handler(message: Message):
     user_id = message.from_user.id
     text = message.text or message.caption or ""
 
+    await cache_user_from_message(message)
+
     settings = await db.get_settings(chat_id)
 
     for hook in get_hooks():
@@ -528,6 +533,8 @@ async def file_no_caption_handler(message: Message):
     chat_id = message.chat.id
     user_id = message.from_user.id
     text = message.text or message.caption or ""
+
+    await cache_user_from_message(message)
 
     settings = await db.get_settings(chat_id)
 
