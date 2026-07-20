@@ -113,41 +113,41 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
 def edge_lines(input_path: str, output_path: str):
     import numpy as np
-    from math import sin as _sin
 
     img = Image.open(input_path).convert("L")
     w, h = img.size
-
-    blur_r = max(2, min(w, h) // 100)
-    img = img.filter(ImageFilter.GaussianBlur(radius=blur_r))
+    img = img.filter(ImageFilter.GaussianBlur(radius=2))
     arr = np.array(img, dtype=np.float64)
 
-    out = Image.new("RGB", (w, h), (255, 255, 255))
+    scale = 2
+    out_w, out_h = w * scale, h * scale
+    out = Image.new("RGB", (out_w, out_h), (255, 255, 255))
     draw = ImageDraw.Draw(out)
 
     num_lines = max(25, min(70, h // 14))
     step_y = h / num_lines
     max_amp = (step_y / 2.0) * 0.90
 
+    xs = np.arange(0, w, 1, dtype=np.float64)
+    xi = xs.astype(np.int32)
+    xi = np.clip(xi, 0, w - 1)
+
     for i in range(num_lines):
         base_y = (i + 0.5) * step_y
         row_idx = int(base_y)
         if row_idx < 0 or row_idx >= h:
             continue
+
         row_data = arr[row_idx, :]
+        intensity = np.clip((255.0 - row_data) / 255.0, 0.0, 1.0)
+        elev = intensity[xi] * max_amp
+        micro = np.sin(xs * 0.15) * (elev * 0.25)
+        current_y = np.clip(base_y - elev + micro, 0, h - 1)
 
-        intensity = (255.0 - row_data) / 255.0
-        intensity = np.clip(intensity, 0.0, 1.0)
+        pts = [(int(xs[k] * scale), int(current_y[k] * scale)) for k in range(len(xs))]
+        draw.line(pts, fill=(0, 0, 0), width=2 * scale)
 
-        freq = 50.0 / w
-        xs = np.arange(0, w, 2, dtype=np.int32)
-        wave = np.sin(xs * freq)
-        offset = wave * (intensity[xs] * max_amp)
-        current_y = np.clip(base_y + offset, 0, h - 1)
-
-        pts = [(int(xs[k]), int(current_y[k])) for k in range(len(xs))]
-        draw.line(pts, fill=(0, 0, 0), width=2)
-
+    out = out.resize((w, h), Image.Resampling.LANCZOS)
     out.save(output_path)
 
 
