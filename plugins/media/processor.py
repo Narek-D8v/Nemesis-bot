@@ -113,15 +113,11 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
 def edge_lines(input_path: str, output_path: str):
     img = Image.open(input_path).convert("L")
+    img = ImageOps.autocontrast(img, cutoff=3)
     img = img.filter(ImageFilter.SMOOTH)
-    img = ImageOps.autocontrast(img, cutoff=5)
-    img = img.filter(ImageFilter.FIND_EDGES)
-    img = ImageOps.autocontrast(img, cutoff=2)
-    img = img.point(lambda p: 255 if p > 80 else 0)
-    img = ImageOps.invert(img)
-    img = ImageOps.expand(img, border=1, fill=255)
-    img = img.filter(ImageFilter.MaxFilter(3))
-    img = ImageOps.crop(img, border=1)
+    img = img.filter(ImageFilter.CONTOUR)
+    img = ImageOps.autocontrast(img)
+    img = img.point(lambda p: 255 if p > 128 else 0)
     img.save(output_path)
 
 
@@ -160,37 +156,38 @@ def scanlines(input_path: str, output_path: str):
 
 
 def triggered(input_path: str, output_path: str):
-    img = Image.open(input_path).convert("RGBA")
+    img = Image.open(input_path).convert("RGB")
     w, h = img.size
 
-    overlay = Image.new("RGBA", (w, h), (255, 0, 0, 110))
-    img = Image.alpha_composite(img, overlay)
+    shake = Image.new("RGB", (w + 50, h + 50), (0, 0, 0))
+    shake.paste(img, (20, 20))
+    shake.paste(img, (25, 30))
+    shake.paste(img, (30, 20))
+    shake.paste(img, (15, 35))
+    shake.paste(img, (35, 15))
+    shake = shake.crop((15, 15, w + 35, h + 35))
+    rw, rh = shake.size
 
-    shake = Image.new("RGBA", (w + 40, h + 40), (0, 0, 0, 0))
-    shake.paste(img, (18, 18), img)
-    shake.paste(img, (10, 26), img)
-    shake.paste(img, (26, 10), img)
-    shake.paste(img, (8, 20), img)
-    shake.paste(img, (20, 8), img)
-    shake.paste(img, (14, 28), img)
-    shake.paste(img, (28, 14), img)
-    result = shake.crop((8, 8, w + 32, h + 32)).convert("RGB")
-    rw, rh = result.size
+    overlay = Image.new("RGB", (rw, rh), (255, 0, 0))
+    shake = Image.blend(shake, overlay, 0.35)
 
-    bar_h = max(50, rh // 7)
-    bar = Image.new("RGB", (rw, bar_h), (255, 165, 0))
-    result.paste(bar, (0, rh - bar_h))
+    bar_h = max(55, rh // 6)
+    draw = ImageDraw.Draw(shake)
+    draw.rectangle([(0, rh - bar_h), (rw, rh)], fill=(255, 165, 0))
 
-    fnt = _ensure_font(bar_h - 10)
-    fdraw = ImageDraw.Draw(result)
+    fnt = _ensure_font(bar_h - 12)
     txt = "TRIGGERED"
-    tw = fdraw.textbbox((0, 0), txt, font=fnt)[2]
+    tw = draw.textbbox((0, 0), txt, font=fnt)[2]
     tx = (rw - tw) // 2
-    ty = rh - bar_h + (bar_h - fdraw.textbbox((0, 0), txt, font=fnt)[3]) // 2 - 2
-    fdraw.text((tx - 1, ty - 1), txt, fill=(0, 0, 0), font=fnt)
-    fdraw.text((tx + 1, ty + 1), txt, fill=(0, 0, 0), font=fnt)
-    fdraw.text((tx, ty), txt, fill=(255, 255, 255), font=fnt)
-    result.save(output_path)
+    ty = rh - bar_h + (bar_h - draw.textbbox((0, 0), txt, font=fnt)[3]) // 2
+
+    txt_img = Image.new("RGB", (rw, bar_h), (255, 165, 0))
+    tdraw = ImageDraw.Draw(txt_img)
+    tdraw.text((tx, ty - (rh - bar_h)), txt, fill=(0, 0, 0), font=fnt)
+    txt_img = txt_img.filter(ImageFilter.BoxBlur(3))
+    shake.paste(txt_img, (0, rh - bar_h))
+
+    shake.save(output_path)
 
 
 def _best_font_size(draw: ImageDraw.Draw, text: str, max_w: int, max_h: int, min_size: int = 24, max_size: int = 60):
