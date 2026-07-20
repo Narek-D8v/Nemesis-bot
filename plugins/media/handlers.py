@@ -43,6 +43,19 @@ _RESULT_CAPTIONS = [
 ]
 
 
+_PROCESSING_MSGS_VIDEO = [
+    "Начинаю обработку видео, ожидайте ✨",
+    "Конвертирую видео, секундочку 🎬",
+    "Кручу-верчу видео, почти готово 📹",
+    "Немного терпения, видео обрабатывается 🎥",
+    "Делаю кружок, подождите 🔄",
+    "Обрабатываю видео, потерпите чуточку ⏳",
+    "Режу и монтирую, сейчас будет 📽️",
+    "Запускаю видеопроцессор, ожидайте ⚡",
+    "Превращаю видео в кружок 🌀",
+    "Немного магии видео, почти готово 🪄",
+]
+
 _PROCESSING_MSGS = [
     "Начинаю обработку, ожидайте, пожалуйста ✨",
     "Уже колдую, секундочку! 🎨",
@@ -77,13 +90,14 @@ _PROCESSING_MSGS = [
 ]
 
 
-async def _say_processing(message: Message) -> Message | None:
+async def _say_processing(message: Message, is_video: bool = False) -> Message | None:
     user = message.from_user
     if user:
         link = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
     else:
         link = "Пользователь"
-    text = f"{link},\n{random.choice(_PROCESSING_MSGS)}"
+    msg = random.choice(_PROCESSING_MSGS_VIDEO if is_video else _PROCESSING_MSGS)
+    text = f"{link},\n{msg}"
     try:
         return await message.reply(text)
     except Exception:
@@ -161,7 +175,7 @@ async def handle_circle(message: Message, chat_id: int, user_id: int, text: str,
         await message.reply("❌ Видео должно быть не длиннее 60 секунд.")
         return True
 
-    proc_msg = await _say_processing(message)
+    proc_msg = await _say_processing(message, is_video=True)
 
     input_path = await _download_file(video.file_id)
     if not input_path:

@@ -1,6 +1,7 @@
 import asyncio
 import math
 import os
+import shutil
 from pathlib import Path
 
 from PIL import Image, ImageOps, ImageFilter, ImageDraw, ImageFont
@@ -265,23 +266,18 @@ async def _run_ffmpeg(args: list[str]) -> tuple[int, str, str]:
     return proc.returncode or 0, stdout.decode(), stderr.decode()
 
 
-async def make_video_circle(input_path: str, output_path: str, max_duration: int = 60):
-    code, out, err = await _run_ffmpeg([
-        "ffprobe", "-v", "error", "-show_entries",
-        "format=duration", "-of",
-        "default=noprint_wrappers=1:nokey=1", input_path,
-    ])
-    try:
-        dur = float(out.strip())
-    except (ValueError, TypeError):
-        dur = 0
-    duration = min(dur, max_duration)
+def _ffmpeg_path() -> str:
+    p = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+    return p or "ffmpeg"
 
+
+async def make_video_circle(input_path: str, output_path: str, max_duration: int = 60):
+    ffmpeg = _ffmpeg_path()
     await _run_ffmpeg([
-        "ffmpeg", "-y",
+        ffmpeg, "-y",
         "-i", input_path,
         "-vf", "crop=min(iw\\,ih):min(iw\\,ih),format=yuv420p",
-        "-t", str(duration),
+        "-t", str(max_duration),
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "23",
