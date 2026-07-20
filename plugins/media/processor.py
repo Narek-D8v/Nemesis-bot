@@ -120,8 +120,8 @@ def edge_lines(input_path: str, output_path: str):
     out = Image.new("RGB", (w, h), (255, 255, 255))
     draw = ImageDraw.Draw(out)
 
-    spacing = max(3, h // 120)
-    amp = max(4, h // 60)
+    spacing = max(6, h // 40)
+    amp = max(8, h // 30)
 
     for y in range(0, h, spacing):
         pts = []
