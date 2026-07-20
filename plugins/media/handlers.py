@@ -1,4 +1,5 @@
 import os
+import random
 import re
 import tempfile
 
@@ -7,6 +8,48 @@ from aiogram.enums import ChatType
 
 from bot import bot, logger
 from . import processor
+
+_PROCESSING_MSGS = [
+    "Начинаю обработку, ожидайте, пожалуйста ✨",
+    "Уже колдую, секундочку! 🎨",
+    "Магия начинается, подождите немного 🔮",
+    "Обрабатываю, потерпите чуточку 🐌",
+    "Превращаю в шедевр, почти готово 🖼️",
+    "Немного терпения, уже в процессе 💫",
+    "Вжух — и будет красиво, ожидайте 🌟",
+    "Кручу-верчу, сделать хочу, минуту! 🌀",
+    "Заряжаю фотонную пушку... почти обработал 🚀",
+    "Рисую пиксели, не переключайтесь 🎯",
+    "Шлифую алгоритмы, секунду ⏳",
+    "Немного волшебной пыли и готово ✨🪄",
+    "Загружаю фильтры, ожидайте эффекта 🎛️",
+    "Считаю до трёх... раз, два... 🕐",
+    "Обработчик запущен, ждите результат 📡",
+    "Нейросети в деле, скоро будет круто 🤖",
+    "Включаю режим творца, подождите 🎨",
+    "Уже почти, доделываю последние штрихи 🖌️",
+    "Преобразую реальность, ожидайте... 🌈",
+    "Так, так, так... сейчас сделаем красиво 💅",
+    "Запускаю магический процессор ⚡",
+    "Минутку внимания, изображение обрабатывается 🖥️",
+    "Ща всё будет, босс, подождите 🔥",
+    "Волшебство требует времени, ожидайте 🧙",
+    "Достаю фильтры из рукава, секунду 🎩",
+    "Настраиваю пиксели, потерпите 🎚️",
+    "Скоро будет эпично, чуть-чуть подождите 🏆",
+    "Превращаем обычное в необычное, ожидайте 🦋",
+    "Калибрую красоту, почти финиш 💎",
+    "Машина творчества запущена, ждите результат 🎰",
+]
+
+
+async def _say_processing(message: Message) -> Message | None:
+    name = message.from_user.first_name if message.from_user else "Пользователь"
+    text = f"@{name}, {random.choice(_PROCESSING_MSGS)}"
+    try:
+        return await message.reply(text)
+    except Exception:
+        return None
 
 CMD_CIRCLE = re.compile(r'^\.кружок', re.IGNORECASE)
 CMD_BW = re.compile(r'^\.чб', re.IGNORECASE)
@@ -79,6 +122,8 @@ async def handle_circle(message: Message, chat_id: int, user_id: int, text: str,
         await message.reply("❌ Видео должно быть не длиннее 60 секунд.")
         return True
 
+    proc_msg = await _say_processing(message)
+
     input_path = await _download_file(video.file_id)
     if not input_path:
         await message.reply("❌ Не удалось загрузить видео.")
@@ -107,6 +152,8 @@ async def handle_bw(message: Message, chat_id: int, user_id: int, text: str, set
     if not message.reply_to_message or not message.reply_to_message.photo:
         await message.reply("❌ Ответьте на фото командой .чб")
         return True
+
+    proc_msg = await _say_processing(message)
 
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
@@ -138,6 +185,8 @@ async def handle_ascii(message: Message, chat_id: int, user_id: int, text: str, 
 
     chars = m.group(1).strip() or "01"
 
+    proc_msg = await _say_processing(message)
+
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
     if not input_path:
@@ -164,6 +213,8 @@ async def handle_edges(message: Message, chat_id: int, user_id: int, text: str, 
     if not message.reply_to_message or not message.reply_to_message.photo:
         await message.reply("❌ Ответьте на фото командой .линии")
         return True
+
+    proc_msg = await _say_processing(message)
 
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
@@ -192,6 +243,8 @@ async def handle_mirror(message: Message, chat_id: int, user_id: int, text: str,
         await message.reply("❌ Ответьте на фото командой .зерк")
         return True
 
+    proc_msg = await _say_processing(message)
+
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
     if not input_path:
@@ -218,6 +271,8 @@ async def handle_pixelate(message: Message, chat_id: int, user_id: int, text: st
     if not message.reply_to_message or not message.reply_to_message.photo:
         await message.reply("❌ Ответьте на фото командой .пиксель")
         return True
+
+    proc_msg = await _say_processing(message)
 
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
@@ -246,6 +301,8 @@ async def handle_negative(message: Message, chat_id: int, user_id: int, text: st
         await message.reply("❌ Ответьте на фото командой .негатив")
         return True
 
+    proc_msg = await _say_processing(message)
+
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
     if not input_path:
@@ -273,6 +330,8 @@ async def handle_scanlines(message: Message, chat_id: int, user_id: int, text: s
         await message.reply("❌ Ответьте на фото командой .полоски")
         return True
 
+    proc_msg = await _say_processing(message)
+
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
     if not input_path:
@@ -299,6 +358,8 @@ async def handle_triggered(message: Message, chat_id: int, user_id: int, text: s
     if not message.reply_to_message or not message.reply_to_message.photo:
         await message.reply("❌ Ответьте на фото командой .тр")
         return True
+
+    proc_msg = await _say_processing(message)
 
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
@@ -329,6 +390,8 @@ async def handle_demotivator(message: Message, chat_id: int, user_id: int, text:
         return True
 
     text_arg = m.group(1).strip() if m.group(1) else ""
+
+    proc_msg = await _say_processing(message)
 
     photo = message.reply_to_message.photo[-1]
     input_path = await _download_file(photo.file_id)
