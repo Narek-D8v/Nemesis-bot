@@ -111,25 +111,62 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     out_img.save(output_path, quality=85)
 
 
+def _catmull_rom(y0, y1, y2, y3, t):
+    t2 = t * t
+    t3 = t2 * t
+    return 0.5 * (
+        2 * y1 +
+        (-y0 + y2) * t +
+        (2 * y0 - 5 * y1 + 4 * y2 - y3) * t2 +
+        (-y0 + 3 * y1 - 3 * y2 + y3) * t3
+    )
+
+
+def _smooth_line_y(y_vals: list[float], sample_step: int, out_len: int) -> list[float]:
+    if len(y_vals) < 2:
+        return [y_vals[0]] * out_len if y_vals else [0.0] * out_len
+
+    result = []
+    for ox in range(out_len):
+        sx = ox / sample_step
+        i = int(sx)
+        t = sx - i
+        i = max(0, min(i, len(y_vals) - 2))
+        p0 = y_vals[max(0, i - 1)]
+        p1 = y_vals[i]
+        p2 = y_vals[min(len(y_vals) - 1, i + 1)]
+        p3 = y_vals[min(len(y_vals) - 1, i + 2)]
+        result.append(_catmull_rom(p0, p1, p2, p3, t))
+    return result
+
+
 def edge_lines(input_path: str, output_path: str):
     orig = Image.open(input_path).convert("RGB")
     w, h = orig.size
+
     gray = orig.convert("L")
+    gray = gray.filter(ImageFilter.GaussianBlur(radius=max(1, w // 400)))
     gp = list(gray.getdata())
 
     out = Image.new("RGB", (w, h), (255, 255, 255))
     draw = ImageDraw.Draw(out)
 
-    spacing = max(6, h // 40)
-    amp = max(8, h // 30)
+    num_lines = max(20, min(80, h // 12))
+    spacing = h / num_lines
+    amax = spacing * 0.8
+    smp = max(3, min(5, w // 200))
 
-    for y in range(0, h, spacing):
-        pts = []
-        for x in range(w):
-            lum = gp[y * w + x]
-            dy = int((lum - 128) * amp / 128)
-            ny = max(0, min(h - 1, y + dy))
-            pts.append((x, ny))
+    for i in range(num_lines):
+        by = int(i * spacing)
+        if by >= h:
+            break
+        raw_y = []
+        for sx in range(0, w, smp):
+            lum = gp[by * w + min(sx, w - 1)]
+            dy = (128 - lum) * amax / 128
+            raw_y.append(max(0, min(h - 1, by + dy)))
+        smooth_y = _smooth_line_y(raw_y, smp, w)
+        pts = [(x, smooth_y[x]) for x in range(w)]
         draw.line(pts, fill=(0, 0, 0), width=2)
 
     out.save(output_path)
