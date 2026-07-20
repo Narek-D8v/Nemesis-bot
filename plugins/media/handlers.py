@@ -44,8 +44,12 @@ _PROCESSING_MSGS = [
 
 
 async def _say_processing(message: Message) -> Message | None:
-    name = message.from_user.first_name if message.from_user else "Пользователь"
-    text = f"@{name}, {random.choice(_PROCESSING_MSGS)}"
+    user = message.from_user
+    if user:
+        link = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
+    else:
+        link = "Пользователь"
+    text = f"{link}, {random.choice(_PROCESSING_MSGS)}"
     try:
         return await message.reply(text)
     except Exception:
