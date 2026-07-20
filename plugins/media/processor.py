@@ -63,24 +63,6 @@ def _luminance(r: int, g: int, b: int) -> float:
     return 0.299 * r + 0.587 * g + 0.114 * b
 
 
-def _visual_metrics(font):
-    bbox = ImageDraw.Draw(Image.new("RGB", (1, 1))).textbbox((0, 0), "A", font=font)
-    cw = max(1, bbox[2] - bbox[0])
-    ch = max(1, bbox[3] - bbox[1])
-    test = Image.new("L", (cw, ch), 0)
-    draw = ImageDraw.Draw(test)
-    draw.text((0, 0), "@", fill=255, font=font)
-    px = list(test.getdata())
-    y0 = 0; y1 = ch - 1
-    for y in range(ch):
-        if any(px[y * cw + x] for x in range(cw)):
-            y0 = y; break
-    for y in range(ch - 1, -1, -1):
-        if any(px[y * cw + x] for x in range(cw)):
-            y1 = y; break
-    return cw, ch, max(1, y1 - y0 + 1)
-
-
 def ascii_art(input_path: str, output_path: str, chars: str = ""):
     gradient = chars or _ASCII_CHARS
     if not gradient:
@@ -89,26 +71,25 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     orig_w, orig_h = img.size
 
     font = _ensure_font(10)
-    cw, ch, vis_ch = _visual_metrics(font)
+    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    bbox_a = tmp.textbbox((0, 0), "A", font=font)
+    cw = max(1, bbox_a[2] - bbox_a[0])
+    ch = max(1, bbox_a[3] - bbox_a[1])
 
     cols = 300
-    rows = int(cols * orig_h / orig_w * cw / vis_ch)
+    rows = int(cols * orig_h / orig_w * cw / ch)
     rows = max(1, rows)
     small = img.resize((cols, rows), Image.LANCZOS)
     pixels = list(small.getdata())
     scale = len(gradient) - 1
 
-    lines = []
     cmap = []
     for y in range(rows):
-        line = []
         clr = []
         for x in range(cols):
             r, g, b = pixels[y * cols + x]
             lum = 0.299 * r + 0.587 * g + 0.114 * b
-            line.append(gradient[min(int(lum / 255 * scale), scale)])
             clr.append((r, g, b))
-        lines.append("".join(line))
         cmap.append(clr)
 
     out_w = cols * cw
@@ -116,7 +97,12 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     out_img = Image.new("RGB", (out_w, out_h), "black")
     draw = ImageDraw.Draw(out_img)
     for y in range(rows):
-        draw.text((0, y * ch), lines[y], fill="white", font=font)
+        chars_line = ""
+        for x in range(cols):
+            r, g, b = pixels[y * cols + x]
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+            chars_line += gradient[min(int(lum / 255 * scale), scale)]
+        draw.text((0, y * ch), chars_line, fill="white", font=font)
 
     pix = out_img.load()
     for py in range(out_h):
@@ -128,6 +114,10 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
             if pix[px, py] != (0, 0, 0):
                 cx = min(px // cw, cols - 1)
                 pix[px, py] = row[cx]
+
+    bbox = out_img.getbbox()
+    if bbox:
+        out_img = out_img.crop(bbox)
 
     out_img.save(output_path, quality=85)
 
