@@ -9,6 +9,40 @@ from aiogram.enums import ChatType
 from bot import bot, logger
 from . import processor
 
+_RESULT_CAPTIONS = [
+    "Вот ваше изображение 🖼️",
+    "Держите результат ✨",
+    "Ваш шедевр готов 🎨",
+    "Получайте, распишитесь 📸",
+    "Готово, забирайте ✅",
+    "Изображение обработано 🔥",
+    "Вуаля! Ваша картинка 🌟",
+    "Как вам такое? 👀",
+    "Результат налицо 💫",
+    "Красота получилась 😍",
+    "Держите, это ваше 🎯",
+    "Обработка завершена 🎉",
+    "Ловите результат 🚀",
+    "Готовенькое 🍪",
+    "Вот что вышло 🤩",
+    "Та-да! Ваше изображение 🎭",
+    "Сделано с любовью 💖",
+    "Ваш заказ готов 🛠️",
+    "Шедевр готов к просмотру 👌",
+    "Вот так получилось 🎪",
+    "Нравится? Надеюсь, да 😊",
+    "Преображение завершено 🦋",
+    "Готово к употреблению 🍿",
+    "Забегайте, результат ждёт 🚪",
+    "Свежеобработанное 🔄",
+    "Ваша картинка готова 🏁",
+    "Вот, держите на здоровье 🫶",
+    "Оп-па! Готово 🎩",
+    "Сделано с душой 💝",
+    "Красотища вышла 🌈",
+]
+
+
 _PROCESSING_MSGS = [
     "Начинаю обработку, ожидайте, пожалуйста ✨",
     "Уже колдую, секундочку! 🎨",
@@ -89,7 +123,8 @@ async def _download_file(file_id: str) -> str | None:
 
 async def _reply_photo(message: Message, output_path: str):
     try:
-        await message.reply_photo(FSInputFile(output_path))
+        caption = random.choice(_RESULT_CAPTIONS)
+        await message.reply_photo(FSInputFile(output_path), caption=caption)
     except Exception as e:
         logger.error(f"Send photo failed: {e}")
         await message.reply("❌ Не удалось отправить результат.")
