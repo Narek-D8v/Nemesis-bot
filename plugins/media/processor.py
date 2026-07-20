@@ -72,11 +72,10 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
     font = _ensure_font(10)
     tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    bbox = tmp.textbbox((0, 0), "Ay", font=font)
     cw = max(1, tmp.textbbox((0, 0), "A", font=font)[2])
-    ch = max(1, bbox[3])
+    ch = max(1, tmp.textbbox((0, 0), "A", font=font)[3])
 
-    cols = 320
+    cols = 400
     rows = int(cols * orig_h / orig_w * cw / ch)
     rows = max(1, rows)
     small = img.resize((cols, rows), Image.LANCZOS)
@@ -90,11 +89,6 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
         clr = []
         for x in range(cols):
             r, g, b = pixels[y * cols + x]
-            max_c = max(r, g, b)
-            if max_c > 20:
-                r = min(255, int(r * 1.6))
-                g = min(255, int(g * 1.6))
-                b = min(255, int(b * 1.6))
             lum = 0.299 * r + 0.587 * g + 0.114 * b
             line.append(gradient[min(int(lum / 255 * scale), scale)])
             clr.append((r, g, b))
