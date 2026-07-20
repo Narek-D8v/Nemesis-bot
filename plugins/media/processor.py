@@ -55,31 +55,43 @@ def black_white(input_path: str, output_path: str):
     img.save(output_path)
 
 
-def ascii_art(input_path: str, output_path: str, chars: str = "01"):
-    img = Image.open(input_path).convert("L")
-    width, height = img.size
-    aspect = height / width
-    new_w = 120
-    new_h = int(aspect * new_w * 0.55)
-    img = img.resize((new_w, new_h))
+_ASCII_CHARS = "@%#8&$WM*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^'. "
 
-    pixels = list(img.getdata())
-    scale = 255 // (len(chars) - 1) if len(chars) > 1 else 1
-    ascii_str = ""
-    for i, p in enumerate(pixels):
-        idx = min(p // scale, len(chars) - 1)
-        ascii_str += chars[idx]
-        if (i + 1) % new_w == 0:
-            ascii_str += "\n"
+
+def _luminance(r: int, g: int, b: int) -> float:
+    return 0.299 * r + 0.587 * g + 0.114 * b
+
+
+def ascii_art(input_path: str, output_path: str, chars: str = ""):
+    gradient = chars or _ASCII_CHARS
+    img = Image.open(input_path).convert("RGB")
+    w, h = img.size
+    aspect = h / w
+    new_w = 280
+    new_h = int(aspect * new_w * 0.50)
+    small = img.resize((new_w, new_h), Image.LANCZOS)
 
     font = _ensure_font(10)
-    lines = ascii_str.split("\n")
-    line_h = font.getbbox("A")[3] + 2 if hasattr(font, "getbbox") else 12
-    out_h = len(lines) * line_h
-    out_w = font.getbbox(ascii_str.split("\n")[0])[2] + 20 if hasattr(font, "getbbox") else new_w * 7
+    out_img = Image.new("RGB", (1, 1), "black")
+    draw = ImageDraw.Draw(out_img)
+    bbox = draw.textbbox((0, 0), "A", font=font)
+    char_w = max(1, bbox[2] - bbox[0] + 1)
+    char_h = max(1, bbox[3] - bbox[1] + 1)
+    out_w = max(1, new_w * char_w)
+    out_h = max(1, new_h * char_h)
+
     out_img = Image.new("RGB", (out_w, out_h), "black")
     draw = ImageDraw.Draw(out_img)
-    draw.text((10, 5), ascii_str, fill="white", font=font)
+
+    scale = len(gradient) - 1
+    for y in range(new_h):
+        for x in range(new_w):
+            r, g, b = small.getpixel((x, y))
+            lum = _luminance(r, g, b)
+            idx = min(int(lum / 255 * scale), scale)
+            ch = gradient[idx]
+            draw.text((x * char_w, y * char_h), ch, fill=(r, g, b), font=font)
+
     out_img.save(output_path)
 
 
