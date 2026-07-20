@@ -71,55 +71,33 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
     font = _ensure_font(10)
     tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    bbox = tmp.textbbox((0, 0), "A", font=font)
-    cw = max(1, bbox[2] - bbox[0])
-    ch = max(1, bbox[3] - bbox[1])
+    bbox = tmp.textbbox((0, 0), "Ay", font=font)
+    cw = max(1, tmp.textbbox((0, 0), "A", font=font)[2])
+    ch = max(1, bbox[3])
 
-    cols = 350
+    cols = 280
     rows = int(cols * orig_h / orig_w * cw / ch)
     rows = max(1, rows)
     small = img.resize((cols, rows), Image.LANCZOS)
     pixels = list(small.getdata())
 
     scale = len(gradient) - 1
-    lines = []
-    color_map = []
+    out_w = cols * cw
+    out_h = rows * ch
+    out_img = Image.new("RGB", (out_w, out_h), "black")
+    draw = ImageDraw.Draw(out_img)
+
     for y in range(rows):
-        line_chars = []
-        line_colors = []
         for x in range(cols):
             r, g, b = pixels[y * cols + x]
             max_c = max(r, g, b)
             if max_c > 20:
-                r = min(255, int(r * 1.8))
-                g = min(255, int(g * 1.8))
-                b = min(255, int(b * 1.8))
+                r = min(255, int(r * 1.5))
+                g = min(255, int(g * 1.5))
+                b = min(255, int(b * 1.5))
             lum = 0.299 * r + 0.587 * g + 0.114 * b
             char = gradient[min(int(lum / 255 * scale), scale)]
-            line_chars.append(char)
-            line_colors.append((r, g, b))
-        lines.append("".join(line_chars))
-        color_map.append(line_colors)
-
-    text = "\n".join(lines)
-    out_w = max(1, cols * cw)
-    out_h = max(1, rows * ch)
-    out_img = Image.new("RGB", (out_w, out_h), "black")
-    draw = ImageDraw.Draw(out_img)
-    draw.multiline_text((0, 0), text, fill="white", font=font, spacing=0)
-
-    pix = out_img.load()
-    for py in range(out_h):
-        cy = py // ch
-        if cy >= len(color_map):
-            continue
-        row_colors = color_map[cy]
-        for px in range(out_w):
-            mr, mg, mb = pix[px, py]
-            if mr == 0 and mg == 0 and mb == 0:
-                continue
-            cx = min(px // cw, cols - 1)
-            pix[px, py] = row_colors[cx]
+            draw.text((x * cw, y * ch), char, fill=(r, g, b), font=font)
 
     out_img.save(output_path, quality=85)
 
