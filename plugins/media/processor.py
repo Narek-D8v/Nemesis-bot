@@ -156,6 +156,7 @@ def _best_font_size(draw: ImageDraw.Draw, text: str, max_w: int, max_h: int, min
 
 
 def demotivator(input_path: str, output_path: str, text: str = ""):
+    text = text.upper()
     img = Image.open(input_path).convert("RGB")
     photo_w, photo_h = img.size
     max_photo_w = 700
