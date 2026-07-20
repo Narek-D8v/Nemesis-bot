@@ -112,13 +112,16 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
 
 def edge_lines(input_path: str, output_path: str):
-    img = Image.open(input_path).convert("L")
-    img = ImageOps.autocontrast(img, cutoff=3)
-    img = img.filter(ImageFilter.SMOOTH)
-    img = img.filter(ImageFilter.CONTOUR)
-    img = ImageOps.autocontrast(img)
-    img = img.point(lambda p: 255 if p > 128 else 0)
-    img.save(output_path)
+    orig = Image.open(input_path).convert("RGB")
+    gray = orig.convert("L")
+    gray = gray.filter(ImageFilter.SMOOTH)
+    edges = gray.filter(ImageFilter.FIND_EDGES)
+    edges = ImageOps.autocontrast(edges, cutoff=2)
+    edges = edges.filter(ImageFilter.MaxFilter(3))
+    edges = edges.point(lambda p: 255 if p > 60 else 0)
+    edges = ImageOps.invert(edges).convert("RGB")
+    result = Image.blend(orig, edges, 0.5)
+    result.save(output_path)
 
 
 def mirror(input_path: str, output_path: str):
