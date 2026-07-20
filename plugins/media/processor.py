@@ -111,62 +111,41 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     out_img.save(output_path, quality=85)
 
 
-def _catmull_rom(y0, y1, y2, y3, t):
-    t2 = t * t
-    t3 = t2 * t
-    return 0.5 * (
-        2 * y1 +
-        (-y0 + y2) * t +
-        (2 * y0 - 5 * y1 + 4 * y2 - y3) * t2 +
-        (-y0 + 3 * y1 - 3 * y2 + y3) * t3
-    )
-
-
-def _smooth_line_y(y_vals: list[float], sample_step: int, out_len: int) -> list[float]:
-    if len(y_vals) < 2:
-        return [y_vals[0]] * out_len if y_vals else [0.0] * out_len
-
-    result = []
-    for ox in range(out_len):
-        sx = ox / sample_step
-        i = int(sx)
-        t = sx - i
-        i = max(0, min(i, len(y_vals) - 2))
-        p0 = y_vals[max(0, i - 1)]
-        p1 = y_vals[i]
-        p2 = y_vals[min(len(y_vals) - 1, i + 1)]
-        p3 = y_vals[min(len(y_vals) - 1, i + 2)]
-        result.append(_catmull_rom(p0, p1, p2, p3, t))
-    return result
-
-
 def edge_lines(input_path: str, output_path: str):
-    orig = Image.open(input_path).convert("RGB")
-    w, h = orig.size
+    import numpy as np
+    from math import sin as _sin
 
-    gray = orig.convert("L")
-    gray = gray.filter(ImageFilter.GaussianBlur(radius=max(1, w // 400)))
-    gp = list(gray.getdata())
+    img = Image.open(input_path).convert("L")
+    w, h = img.size
+
+    blur_r = max(2, min(w, h) // 100)
+    img = img.filter(ImageFilter.GaussianBlur(radius=blur_r))
+    arr = np.array(img, dtype=np.float64)
 
     out = Image.new("RGB", (w, h), (255, 255, 255))
     draw = ImageDraw.Draw(out)
 
-    num_lines = max(20, min(80, h // 12))
-    spacing = h / num_lines
-    amax = spacing * 0.8
-    smp = max(3, min(5, w // 200))
+    num_lines = max(25, min(70, h // 14))
+    step_y = h / num_lines
+    max_amp = (step_y / 2.0) * 0.90
 
     for i in range(num_lines):
-        by = int(i * spacing)
-        if by >= h:
-            break
-        raw_y = []
-        for sx in range(0, w, smp):
-            lum = gp[by * w + min(sx, w - 1)]
-            dy = (128 - lum) * amax / 128
-            raw_y.append(max(0, min(h - 1, by + dy)))
-        smooth_y = _smooth_line_y(raw_y, smp, w)
-        pts = [(x, smooth_y[x]) for x in range(w)]
+        base_y = (i + 0.5) * step_y
+        row_idx = int(base_y)
+        if row_idx < 0 or row_idx >= h:
+            continue
+        row_data = arr[row_idx, :]
+
+        intensity = (255.0 - row_data) / 255.0
+        intensity = np.clip(intensity, 0.0, 1.0)
+
+        freq = 50.0 / w
+        xs = np.arange(0, w, 2, dtype=np.int32)
+        wave = np.sin(xs * freq)
+        offset = wave * (intensity[xs] * max_amp)
+        current_y = np.clip(base_y + offset, 0, h - 1)
+
+        pts = [(int(xs[k]), int(current_y[k])) for k in range(len(xs))]
         draw.line(pts, fill=(0, 0, 0), width=2)
 
     out.save(output_path)
