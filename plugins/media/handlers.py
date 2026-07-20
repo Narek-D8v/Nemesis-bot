@@ -49,7 +49,7 @@ async def _say_processing(message: Message) -> Message | None:
         link = f"<a href=\"tg://user?id={user.id}\">{user.first_name}</a>"
     else:
         link = "Пользователь"
-    text = f"{link}, {random.choice(_PROCESSING_MSGS)}"
+    text = f"{link},\n{random.choice(_PROCESSING_MSGS)}"
     try:
         return await message.reply(text)
     except Exception:
