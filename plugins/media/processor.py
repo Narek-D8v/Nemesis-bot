@@ -113,9 +113,12 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
 def edge_lines(input_path: str, output_path: str):
     img = Image.open(input_path).convert("L")
-    img = img.filter(ImageFilter.FIND_EDGES)
+    img = ImageOps.autocontrast(img, cutoff=3)
+    img = img.filter(ImageFilter.Kernel((3, 3), [-1, -1, -1, -1, 8, -1, -1, -1, -1], scale=1, offset=0))
+    img = ImageOps.autocontrast(img, cutoff=1)
+    img = img.point(lambda p: 255 if p > 15 else 0)
     img = ImageOps.invert(img)
-    img = img.point(lambda p: 255 if p > 30 else 0)
+    img = img.filter(ImageFilter.MaxFilter(3))
     img.save(output_path)
 
 
@@ -156,14 +159,32 @@ def scanlines(input_path: str, output_path: str):
 def triggered(input_path: str, output_path: str):
     img = Image.open(input_path).convert("RGBA")
     w, h = img.size
-    overlay = Image.new("RGBA", (w, h), (255, 0, 0, 80))
+
+    overlay = Image.new("RGBA", (w, h), (255, 0, 0, 110))
     img = Image.alpha_composite(img, overlay)
 
-    shake = Image.new("RGBA", (w + 20, h + 20), (0, 0, 0, 0))
-    shake.paste(img, (10, 10), img)
-    shake.paste(img, (5, 15), img)
-    shake.paste(img, (15, 5), img)
-    result = shake.crop((5, 5, w + 15, h + 15))
+    shake = Image.new("RGBA", (w + 40, h + 40), (0, 0, 0, 0))
+    shake.paste(img, (15, 15), img)
+    shake.paste(img, (8, 22), img)
+    shake.paste(img, (22, 8), img)
+    shake.paste(img, (5, 18), img)
+    shake.paste(img, (18, 5), img)
+    shake.paste(img, (12, 25), img)
+    shake.paste(img, (25, 12), img)
+    result = shake.crop((5, 5, w + 35, h + 35)).convert("RGB")
+
+    dw, dh = result.size
+    bar_h = max(40, dh // 8)
+    bar = Image.new("RGB", (dw, bar_h), (255, 165, 0))
+    result.paste(bar, (0, dh - bar_h))
+
+    font = _ensure_font(max(20, bar_h // 2))
+    fdraw = ImageDraw.Draw(result)
+    text = "TRIGGERED"
+    tw = fdraw.textbbox((0, 0), text, font=font)[2]
+    fx = (dw - tw) // 2
+    fy = dh - bar_h + (bar_h - fdraw.textbbox((0, 0), text, font=font)[3]) // 2
+    fdraw.text((fx, fy), text, fill="black", font=font)
     result.save(output_path)
 
 
