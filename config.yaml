@@ -71,6 +71,13 @@ plugins:
       descr_max: 3800
       max_subscriptions: 50
 
+  media:
+    enabled: true
+    version: 1.0.0
+    settings:
+      max_video_duration: 60
+      pixel_block_size: 16
+
   mentions:
     enabled: true
     version: 1.0.0
