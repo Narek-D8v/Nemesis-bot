@@ -69,7 +69,7 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     img = Image.open(input_path).convert("RGB")
     orig_w, orig_h = img.size
 
-    font = _ensure_font(8)
+    font = _ensure_font(9)
     tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     bbox = tmp.textbbox((0, 0), "A", font=font)
     cw = max(1, bbox[2] - bbox[0] + 1)
@@ -91,6 +91,11 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     for y in range(rows):
         for x in range(cols):
             r, g, b = pixels[idx]
+            max_c = max(r, g, b)
+            if max_c > 20:
+                r = min(255, int(r * 1.6))
+                g = min(255, int(g * 1.6))
+                b = min(255, int(b * 1.6))
             lum = 0.299 * r + 0.587 * g + 0.114 * b
             char = gradient[min(int(lum / 255 * scale), scale)]
             draw.text((x * cw, y * ch), char, fill=(r, g, b), font=font)
