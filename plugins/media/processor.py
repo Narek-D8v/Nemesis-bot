@@ -6,7 +6,14 @@ from pathlib import Path
 from PIL import Image, ImageOps, ImageFilter, ImageDraw, ImageFont
 
 
+_FONT_DIR = Path(__file__).parent / "fonts"
+_FONT_LOCAL = _FONT_DIR / "NotoSans-Regular.ttf"
+_FONT_URL = (
+    "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosans/NotoSans-Regular.ttf"
+)
+
 _FONT_CANDIDATES = [
+    str(_FONT_LOCAL),
     str(Path(__file__).parent.parent.parent / "utils" / "fonts" / "impact.ttf"),
     "arial.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -23,6 +30,20 @@ def _ensure_font(size: int = 40):
         except (OSError, IOError):
             continue
     return ImageFont.load_default()
+
+
+async def download_font():
+    if _FONT_LOCAL.exists():
+        return
+    _FONT_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(_FONT_URL, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 200:
+                    _FONT_LOCAL.write_bytes(await resp.read())
+    except Exception:
+        pass
 
 
 def black_white(input_path: str, output_path: str):

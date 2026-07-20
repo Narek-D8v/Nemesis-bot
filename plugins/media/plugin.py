@@ -10,6 +10,9 @@ class MediaPlugin(BasePlugin):
     VERSION = "1.0.0"
 
     async def on_load(self):
+        from .processor import download_font
+        await download_font()
+
         from .handlers import (
             handle_circle,
             handle_bw,
