@@ -75,29 +75,48 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     cw = max(1, tmp.textbbox((0, 0), "A", font=font)[2])
     ch = max(1, bbox[3])
 
-    cols = 280
+    cols = 320
     rows = int(cols * orig_h / orig_w * cw / ch)
     rows = max(1, rows)
     small = img.resize((cols, rows), Image.LANCZOS)
     pixels = list(small.getdata())
-
     scale = len(gradient) - 1
-    out_w = cols * cw
-    out_h = rows * ch
-    out_img = Image.new("RGB", (out_w, out_h), "black")
-    draw = ImageDraw.Draw(out_img)
 
+    lines = []
+    cmap = []
     for y in range(rows):
+        line = []
+        clr = []
         for x in range(cols):
             r, g, b = pixels[y * cols + x]
             max_c = max(r, g, b)
             if max_c > 20:
-                r = min(255, int(r * 1.5))
-                g = min(255, int(g * 1.5))
-                b = min(255, int(b * 1.5))
+                r = min(255, int(r * 1.6))
+                g = min(255, int(g * 1.6))
+                b = min(255, int(b * 1.6))
             lum = 0.299 * r + 0.587 * g + 0.114 * b
-            char = gradient[min(int(lum / 255 * scale), scale)]
-            draw.text((x * cw, y * ch), char, fill=(r, g, b), font=font)
+            line.append(gradient[min(int(lum / 255 * scale), scale)])
+            clr.append((r, g, b))
+        lines.append("".join(line))
+        cmap.append(clr)
+
+    out_w = cols * cw
+    out_h = rows * ch
+    out_img = Image.new("RGB", (out_w, out_h), "black")
+    draw = ImageDraw.Draw(out_img)
+    for y in range(rows):
+        draw.text((0, y * ch), lines[y], fill="white", font=font)
+
+    pix = out_img.load()
+    for py in range(out_h):
+        cy = py // ch
+        if cy >= len(cmap):
+            continue
+        row = cmap[cy]
+        for px in range(out_w):
+            if pix[px, py] != (0, 0, 0):
+                cx = min(px // cw, cols - 1)
+                pix[px, py] = row[cx]
 
     out_img.save(output_path, quality=85)
 
