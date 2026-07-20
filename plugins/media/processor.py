@@ -72,9 +72,8 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
     font = _ensure_font(10)
     tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    bbox_a = tmp.textbbox((0, 0), "A", font=font)
-    cw = max(1, bbox_a[2] - bbox_a[0])
-    ch = max(1, bbox_a[3] - bbox_a[1])
+    cw = max(1, int(tmp.textlength("A", font=font)))
+    ch = max(1, tmp.textbbox((0, 0), "Ay", font=font)[3])
 
     cols = 300
     rows = int(cols * orig_h / orig_w * cw / ch)
@@ -83,36 +82,26 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     pixels = list(small.getdata())
     scale = len(gradient) - 1
 
-    cmap = []
-    for y in range(rows):
-        clr = []
-        for x in range(cols):
-            r, g, b = pixels[y * cols + x]
-            lum = 0.299 * r + 0.587 * g + 0.114 * b
-            clr.append((r, g, b))
-        cmap.append(clr)
-
-    out_w = cols * cw
+    out_w = cols * cw + 4
     out_h = rows * ch
     out_img = Image.new("RGB", (out_w, out_h), "black")
     draw = ImageDraw.Draw(out_img)
+
     for y in range(rows):
-        chars_line = ""
+        line = ""
         for x in range(cols):
             r, g, b = pixels[y * cols + x]
-            lum = 0.299 * r + 0.587 * g + 0.114 * b
-            chars_line += gradient[min(int(lum / 255 * scale), scale)]
-        draw.text((0, y * ch), chars_line, fill="white", font=font)
+            lum = int(0.299 * r + 0.587 * g + 0.114 * b)
+            line += gradient[min(lum * scale // 255, scale)]
+        draw.text((2, y * ch), line, fill="white", font=font)
 
     pix = out_img.load()
     for py in range(out_h):
-        cy = py // ch
-        if cy >= len(cmap):
-            continue
-        row = cmap[cy]
+        cy = min(py // ch, rows - 1)
+        row = [pixels[cy * cols + x] for x in range(cols)]
         for px in range(out_w):
             if pix[px, py] != (0, 0, 0):
-                cx = min(px // cw, cols - 1)
+                cx = min((px - 2) // cw, cols - 1)
                 pix[px, py] = row[cx]
 
     bbox = out_img.getbbox()
