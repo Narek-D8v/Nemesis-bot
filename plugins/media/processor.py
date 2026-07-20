@@ -273,14 +273,19 @@ def _ffmpeg_path() -> str:
 
 async def make_video_circle(input_path: str, output_path: str, max_duration: int = 60):
     ffmpeg = _ffmpeg_path()
-    await _run_ffmpeg([
+    code, out, err = await _run_ffmpeg([
         ffmpeg, "-y",
         "-i", input_path,
-        "-vf", "crop=min(iw\\,ih):min(iw\\,ih),format=yuv420p",
+        "-vf", "scale=384:384:force_original_aspect_ratio=increase,crop=384:384,setsar=1",
+        "-pix_fmt", "yuv420p",
         "-t", str(max_duration),
         "-c:v", "libx264",
         "-preset", "fast",
         "-crf", "23",
-        "-an",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        "-f", "mp4",
         output_path,
     ])
+    if code != 0:
+        raise RuntimeError(f"ffmpeg failed (code {code}): {err[:500]}")

@@ -146,7 +146,11 @@ async def _reply_photo(message: Message, output_path: str):
 
 async def _reply_video_note(message: Message, output_path: str):
     try:
-        await message.reply_video_note(FSInputFile(output_path))
+        await bot.send_video_note(
+            chat_id=message.chat.id,
+            video_note=FSInputFile(output_path),
+            reply_to_message_id=message.message_id,
+        )
     except Exception as e:
         logger.error(f"Send video note failed: {e}")
         await message.reply("❌ Не удалось отправить кружок.")
