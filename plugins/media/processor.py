@@ -69,13 +69,13 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     img = Image.open(input_path).convert("RGB")
     orig_w, orig_h = img.size
 
-    font = _ensure_font(8)
+    font = _ensure_font(10)
     tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     bbox = tmp.textbbox((0, 0), "A", font=font)
-    cw = max(1, bbox[2] - bbox[0] + 1)
-    ch = max(1, bbox[3] - bbox[1] + 1)
+    cw = max(1, bbox[2] - bbox[0])
+    ch = max(1, bbox[3] - bbox[1])
 
-    cols = 200
+    cols = 350
     rows = int(cols * orig_h / orig_w * cw / ch)
     rows = max(1, rows)
     small = img.resize((cols, rows), Image.LANCZOS)
@@ -91,9 +91,9 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
             r, g, b = pixels[y * cols + x]
             max_c = max(r, g, b)
             if max_c > 20:
-                r = min(255, int(r * 1.6))
-                g = min(255, int(g * 1.6))
-                b = min(255, int(b * 1.6))
+                r = min(255, int(r * 1.8))
+                g = min(255, int(g * 1.8))
+                b = min(255, int(b * 1.8))
             lum = 0.299 * r + 0.587 * g + 0.114 * b
             char = gradient[min(int(lum / 255 * scale), scale)]
             line_chars.append(char)
@@ -106,16 +106,20 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
     out_h = max(1, rows * ch)
     out_img = Image.new("RGB", (out_w, out_h), "black")
     draw = ImageDraw.Draw(out_img)
-    draw.text((0, 0), text, fill="white", font=font)
+    draw.multiline_text((0, 0), text, fill="white", font=font, spacing=0)
 
-    pix_data = out_img.load()
+    pix = out_img.load()
     for py in range(out_h):
+        cy = py // ch
+        if cy >= len(color_map):
+            continue
+        row_colors = color_map[cy]
         for px in range(out_w):
-            if pix_data[px, py] == (255, 255, 255):
-                cx = px // cw
-                cy = py // ch
-                if cy < len(color_map) and cx < len(color_map[cy]):
-                    pix_data[px, py] = color_map[cy][cx]
+            mr, mg, mb = pix[px, py]
+            if mr == 0 and mg == 0 and mb == 0:
+                continue
+            cx = min(px // cw, cols - 1)
+            pix[px, py] = row_colors[cx]
 
     out_img.save(output_path, quality=85)
 
