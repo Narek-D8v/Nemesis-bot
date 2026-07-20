@@ -72,10 +72,11 @@ def ascii_art(input_path: str, output_path: str, chars: str = ""):
 
     font = _ensure_font(10)
     tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    cw = max(1, tmp.textbbox((0, 0), "A", font=font)[2])
-    ch = max(1, tmp.textbbox((0, 0), "A", font=font)[3])
+    bbox_a = tmp.textbbox((0, 0), "A", font=font)
+    cw = max(1, bbox_a[2] - bbox_a[0])
+    ch = max(1, bbox_a[3] - bbox_a[1])
 
-    cols = 400
+    cols = 300
     rows = int(cols * orig_h / orig_w * cw / ch)
     rows = max(1, rows)
     small = img.resize((cols, rows), Image.LANCZOS)
