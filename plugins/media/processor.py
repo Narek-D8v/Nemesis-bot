@@ -64,33 +64,37 @@ def _luminance(r: int, g: int, b: int) -> float:
 
 def ascii_art(input_path: str, output_path: str, chars: str = ""):
     gradient = chars or _ASCII_CHARS
+    if not gradient:
+        gradient = _ASCII_CHARS
     img = Image.open(input_path).convert("RGB")
-    w, h = img.size
-    aspect = h / w
-    new_w = 280
-    new_h = int(aspect * new_w * 0.50)
-    small = img.resize((new_w, new_h), Image.LANCZOS)
+    orig_w, orig_h = img.size
 
-    font = _ensure_font(10)
-    out_img = Image.new("RGB", (1, 1), "black")
-    draw = ImageDraw.Draw(out_img)
-    bbox = draw.textbbox((0, 0), "A", font=font)
-    char_w = max(1, bbox[2] - bbox[0] + 1)
-    char_h = max(1, bbox[3] - bbox[1] + 1)
-    out_w = max(1, new_w * char_w)
-    out_h = max(1, new_h * char_h)
+    font = _ensure_font(8)
+    tmp = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    bbox = tmp.textbbox((0, 0), "A", font=font)
+    cw = max(1, bbox[2] - bbox[0] + 1)
+    ch = max(1, bbox[3] - bbox[1] + 1)
 
+    cols = 450
+    rows = int(cols * orig_h / orig_w * cw / ch)
+    rows = max(1, rows)
+    small = img.resize((cols, rows), Image.LANCZOS)
+    pixels = list(small.getdata())
+
+    out_w = max(1, cols * cw)
+    out_h = max(1, rows * ch)
     out_img = Image.new("RGB", (out_w, out_h), "black")
     draw = ImageDraw.Draw(out_img)
 
     scale = len(gradient) - 1
-    for y in range(new_h):
-        for x in range(new_w):
-            r, g, b = small.getpixel((x, y))
-            lum = _luminance(r, g, b)
-            idx = min(int(lum / 255 * scale), scale)
-            ch = gradient[idx]
-            draw.text((x * char_w, y * char_h), ch, fill=(r, g, b), font=font)
+    idx = 0
+    for y in range(rows):
+        for x in range(cols):
+            r, g, b = pixels[idx]
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+            char = gradient[min(int(lum / 255 * scale), scale)]
+            draw.text((x * cw, y * ch), char, fill=(r, g, b), font=font)
+            idx += 1
 
     out_img.save(output_path)
 
