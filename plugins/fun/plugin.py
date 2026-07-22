@@ -18,16 +18,22 @@ class FunPlugin(BasePlugin):
             handle_shipping,
             handle_text_games,
             handle_ping,
+            handle_criminal_article,
+            handle_sin,
         )
         register_hook("fun_shipping", handle_shipping)
         register_hook("fun_text_games", handle_text_games)
         register_hook("fun_ping", handle_ping)
+        register_hook("fun_criminal_article", handle_criminal_article)
+        register_hook("fun_sin", handle_sin)
         logger.info("Fun plugin loaded with hooks registered")
 
     async def on_unload(self):
         unregister_hook("fun_shipping")
         unregister_hook("fun_text_games")
         unregister_hook("fun_ping")
+        unregister_hook("fun_criminal_article")
+        unregister_hook("fun_sin")
         logger.info("Fun plugin unloaded")
 
     async def _init_db(self):
@@ -45,6 +51,22 @@ class FunPlugin(BasePlugin):
                     chat_id INTEGER,
                     user_id INTEGER,
                     PRIMARY KEY (chat_id, user_id)
+                );
+                CREATE TABLE IF NOT EXISTS fun_criminal_record (
+                    user_id INTEGER,
+                    chat_id INTEGER,
+                    article_num TEXT,
+                    article_title TEXT,
+                    created_at INTEGER,
+                    PRIMARY KEY (user_id, chat_id)
+                );
+                CREATE TABLE IF NOT EXISTS fun_sins_record (
+                    user_id INTEGER,
+                    chat_id INTEGER,
+                    sin_name TEXT,
+                    sin_desc TEXT,
+                    created_at INTEGER,
+                    PRIMARY KEY (user_id, chat_id)
                 );
             """)
             await conn.commit()

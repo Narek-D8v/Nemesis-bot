@@ -280,3 +280,111 @@ async def handle_ping(message: Message, chat_id: int, user_id: int, text: str, s
         return True
 
     return False
+
+
+# === моя статья (УК РФ) ===
+
+from .criminal_data import CRIMINAL_ARTICLES
+
+
+def _get_user_link(message: Message) -> str:
+    user = message.from_user
+    name = esc(user.first_name or "Пользователь")
+    if user.username:
+        return f'{name} (https://t.me/{user.username})'
+    return f'<a href="tg://user?id={user.id}">{name}</a>'
+
+
+async def handle_criminal_article(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped != "моя статья":
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("😊 Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    now = int(time.time())
+    user_link = _get_user_link(message)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT article_num, article_title, created_at FROM fun_criminal_record WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id)
+        )
+        row = await cursor.fetchone()
+
+        if row and (now - row[2]) < 86400:
+            await message.reply(
+                f"🤷‍♂️ Сегодня {user_link} уже приговаривается к статье {row[0]}. {row[1]}"
+            )
+            return True
+
+    num, title = random.choice(CRIMINAL_ARTICLES)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_criminal_record (user_id, chat_id, article_num, article_title, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, chat_id, num, title, now)
+        )
+        await conn.commit()
+
+    await message.reply(
+        f"🤷‍♂️ Сегодня {user_link} приговаривается к статье {num}. {title}"
+    )
+    return True
+
+
+# === мой грех ===
+
+from .sins_data import SINS
+
+
+async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped != "мой грех":
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("😇 Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    now = int(time.time())
+    user_link = _get_user_link(message)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT sin_name, sin_desc, created_at FROM fun_sins_record WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id)
+        )
+        row = await cursor.fetchone()
+
+        if row and (now - row[2]) < 86400:
+            await message.reply(
+                f"😈😈 {user_link} ваш сегодняшний грех уже был определён:\n"
+                f"<b>{row[0]}</b>\n"
+                f"<i>{row[1]}</i>"
+            )
+            return True
+
+    sin_name, sin_desc = random.choice(SINS)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_sins_record (user_id, chat_id, sin_name, sin_desc, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, chat_id, sin_name, sin_desc, now)
+        )
+        await conn.commit()
+
+    await message.reply(
+        f"😈 {user_link} ваш сегодняшний грех:\n"
+        f"<b>{sin_name}</b>\n"
+        f"<i>{sin_desc}</i>"
+    )
+    return True
