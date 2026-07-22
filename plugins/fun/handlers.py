@@ -290,8 +290,6 @@ from .criminal_data import CRIMINAL_ARTICLES
 def _get_user_link(message: Message) -> str:
     user = message.from_user
     name = esc(user.first_name or "Пользователь")
-    if user.username:
-        return f'<a href="https://t.me/{user.username}">{name}</a>'
     return f'<a href="tg://user?id={user.id}">{name}</a>'
 
 
@@ -320,7 +318,7 @@ async def handle_criminal_article(message: Message, chat_id: int, user_id: int, 
         if row and (now - row[2]) < 86400:
             await message.reply(
                 f"🤷‍♂️ Сегодня в отношении {user_link} уже вынесен приговор по статье <b>{row[0]}</b>.\n"
-                f"<blockquote><pre>{row[1]}</pre></blockquote>"
+                f"<blockquote>{row[1]}</blockquote>"
             )
             return True
 
@@ -335,7 +333,7 @@ async def handle_criminal_article(message: Message, chat_id: int, user_id: int, 
 
     await message.reply(
         f"🤷‍♂️ Сегодня {user_link} приговаривается к статье <b>{num}</b>.\n"
-        f"<blockquote><pre>{title}</pre></blockquote>"
+        f"<blockquote>{title}</blockquote>"
     )
     return True
 
@@ -371,7 +369,7 @@ async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, se
             await message.reply(
                 f"😈 {user_link} ваш сегодняшний грех уже был определён:\n"
                 f"<b>{row[0]}</b>\n"
-                f"<blockquote><pre>{row[1]}</pre></blockquote>"
+                f"<blockquote>{row[1]}</blockquote>"
             )
             return True
 
@@ -387,6 +385,6 @@ async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, se
     await message.reply(
         f"😈 {user_link} ваш сегодняшний грех:\n"
         f"<b>{sin_name}</b>\n"
-        f"<blockquote><pre>{sin_desc}</pre></blockquote>"
+        f"<blockquote>{sin_desc}</blockquote>"
     )
     return True
