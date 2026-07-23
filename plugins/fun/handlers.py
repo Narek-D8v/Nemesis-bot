@@ -315,7 +315,7 @@ async def handle_criminal_article(message: Message, chat_id: int, user_id: int, 
         )
         row = await cursor.fetchone()
 
-        if row and (now - row[2]) < 86400:
+        if row and (now - row[2]) < 43200:
             await message.reply(
                 f"🤷‍♂️ Сегодня в отношении {user_link} уже вынесен приговор по статье <b>{row[0]}</b>.\n"
                 f"<blockquote>{row[1]}</blockquote>"
@@ -365,7 +365,7 @@ async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, se
         )
         row = await cursor.fetchone()
 
-        if row and (now - row[2]) < 86400:
+        if row and (now - row[2]) < 43200:
             await message.reply(
                 f"😈 {user_link} ваш сегодняшний грех уже был определён:\n"
                 f"<b>{row[0]}</b>\n"
@@ -386,5 +386,57 @@ async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, se
         f"😈 {user_link} ваш сегодняшний грех:\n"
         f"<b>{sin_name}</b>\n"
         f"<blockquote>{sin_desc}</blockquote>"
+    )
+    return True
+
+
+# === моя зависимость ===
+
+from .addictions_data import ADDICTIONS
+
+
+async def handle_addiction(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped != "моя зависимость":
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("😌 Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    now = int(time.time())
+    user_link = _get_user_link(message)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT addiction_name, addiction_desc, created_at FROM fun_addictions_record WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id)
+        )
+        row = await cursor.fetchone()
+
+        if row and (now - row[2]) < 43200:
+            await message.reply(
+                f"🚬 Сегодня в отношении {user_link} уже определена зависимость:\n"
+                f"<b>{row[0]}</b>\n"
+                f"<blockquote>{row[1]}</blockquote>"
+            )
+            return True
+
+    addiction_name, addiction_desc = random.choice(ADDICTIONS)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_addictions_record (user_id, chat_id, addiction_name, addiction_desc, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, chat_id, addiction_name, addiction_desc, now)
+        )
+        await conn.commit()
+
+    await message.reply(
+        f"🚬 {user_link} ваша сегодняшняя зависимость:\n"
+        f"<b>{addiction_name}</b>\n"
+        f"<blockquote>{addiction_desc}</blockquote>"
     )
     return True
