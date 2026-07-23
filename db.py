@@ -298,6 +298,12 @@ class Database:
                     updated_at INTEGER,
                     PRIMARY KEY (chat_id, username)
                 );
+                CREATE TABLE IF NOT EXISTS activity_daily (
+                    user_id INTEGER,
+                    day INTEGER,
+                    msg_count INTEGER DEFAULT 0,
+                    PRIMARY KEY (user_id, day)
+                );
             """)
             await db.commit()
 
@@ -806,13 +812,28 @@ class Database:
 
     async def track_message(self, chat_id: int, user_id: int):
         now = int(time.time())
+        day = int(time.strftime("%Y%m%d", time.localtime(now)))
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
                 """INSERT INTO user_last_message (chat_id, user_id, last_msg_at, msg_count) VALUES (?, ?, ?, 1)
                    ON CONFLICT(chat_id, user_id) DO UPDATE SET last_msg_at = ?, msg_count = msg_count + 1""",
                 (chat_id, user_id, now, now)
             )
+            await conn.execute(
+                """INSERT INTO activity_daily (user_id, day, msg_count) VALUES (?, ?, 1)
+                   ON CONFLICT(user_id, day) DO UPDATE SET msg_count = msg_count + 1""",
+                (user_id, day)
+            )
             await conn.commit()
+
+    async def get_daily_activity(self, user_id: int, days: int = 10) -> list[tuple[int, int]]:
+        cutoff = int(time.strftime("%Y%m%d", time.localtime(time.time() - days * 86400)))
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT day, msg_count FROM activity_daily WHERE user_id = ? AND day >= ? ORDER BY day ASC",
+                (user_id, cutoff)
+            )
+            return await cursor.fetchall()
 
     async def get_last_message_time(self, chat_id: int, user_id: int) -> tuple | None:
         async with aiosqlite.connect(self.db_path) as conn:

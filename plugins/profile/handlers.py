@@ -945,28 +945,24 @@ _CHART_BG = "#1a1a2e"
 _CHART_TEXT = "#e0e0e0"
 _CHART_BAR = "#e94560"
 
-def _make_activity_chart(data: list[tuple[str, int]]) -> bytes | None:
+def _make_activity_chart(data: list[tuple[int, int]]) -> bytes | None:
     if not _HAS_MPL or len(data) < 2:
         return None
-    labels, values = zip(*data)
+    days = [str(d % 10000)[-2:].lstrip("0") + "." + str(d // 100 % 100) for d, _ in data]
+    values = [v for _, v in data]
     fig, ax = plt.subplots(figsize=(5, 2.8))
     fig.patch.set_facecolor(_CHART_BG)
     ax.set_facecolor(_CHART_BG)
-    colors = plt.cm.RdYlGn([max(0.3, v / max(values)) for v in values])
-    bars = ax.barh(range(len(labels)), values, color=colors, height=0.6, edgecolor="none")
-    ax.set_yticks(range(len(labels)))
-    ax.set_yticklabels(labels, fontsize=8, color=_CHART_TEXT)
-    ax.invert_yaxis()
-    ax.set_xlabel("Сообщения", fontsize=7, color=_CHART_TEXT)
-    ax.tick_params(axis="x", colors=_CHART_TEXT, labelsize=7)
+    bars = ax.bar(range(len(days)), values, color=_CHART_BAR, width=0.6, edgecolor="none")
+    ax.set_xticks(range(len(days)))
+    ax.set_xticklabels(days, fontsize=7, color=_CHART_TEXT, rotation=30, ha="right")
+    ax.set_ylabel("Сообщений", fontsize=7, color=_CHART_TEXT)
+    ax.tick_params(axis="y", colors=_CHART_TEXT, labelsize=7)
+    ax.yaxis.grid(True, alpha=0.15, color=_CHART_TEXT)
+    ax.set_axisbelow(True)
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.xaxis.grid(True, alpha=0.15, color=_CHART_TEXT)
-    ax.set_axisbelow(True)
-    for bar, v in zip(bars, values):
-        ax.text(bar.get_width() + max(values) * 0.01, bar.get_y() + bar.get_height() / 2,
-                str(v), va="center", fontsize=7, color=_CHART_TEXT)
-    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.25)
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=130, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
@@ -1009,11 +1005,7 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
             (target_id,)
         )
         achievements = (await ac.fetchone())[0]
-        acr = await conn.execute(
-            "SELECT chat_id, msg_count FROM user_last_message WHERE user_id = ? AND msg_count > 0 ORDER BY msg_count DESC LIMIT 8",
-            (target_id,)
-        )
-        activity = await acr.fetchall()
+        activity = await db.get_daily_activity(target_id, 10)
 
     if pcr and not pcr[3]:
         await message.reply("🔒 Пользователь скрыл свою анкету.")
@@ -1080,12 +1072,8 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
     text = "\n".join(lines)
 
     if activity and len(activity) >= 2:
-        chart_data = []
-        for cid, cnt in activity:
-            label = f"Чат {str(cid)[-4:]}"
-            chart_data.append((label, cnt))
         try:
-            chart_bytes = await asyncio.to_thread(_make_activity_chart, chart_data)
+            chart_bytes = await asyncio.to_thread(_make_activity_chart, activity)
             if chart_bytes:
                 tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
                 tmp.write(chart_bytes)
