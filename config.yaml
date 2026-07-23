@@ -85,3 +85,13 @@ plugins:
       lurker_days: 14
       mention_batch_size: 10
       max_mentions: 50
+
+  aichat:
+    enabled: true
+    version: 1.0.0
+    settings:
+      model: "openrouter/free"
+      max_tokens: 200
+      cooldown_seconds: 5
+      daily_limit: 20
+      context_size: 20
