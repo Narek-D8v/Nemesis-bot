@@ -71,7 +71,8 @@ DEFAULT_SETTINGS = {
     "pinned_message": None,
     "virus_total_enabled": False,
     "virus_total_scan_files": False,
-    "timezone": "UTC"
+    "timezone": "UTC",
+    "aichat_enabled": True
 }
 
 

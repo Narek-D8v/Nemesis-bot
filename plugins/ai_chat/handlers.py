@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 import time
@@ -11,6 +12,8 @@ from aiogram.types import Message
 from db import db
 from utils import esc
 
+logger = logging.getLogger(__name__)
+
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
@@ -21,9 +24,9 @@ MAX_TOKENS = 200
 MODEL = "openrouter/free"
 
 SYSTEM_PROMPT = (
-    "Ты — Немуся, полезный ассистент. "
-    "Отвечай максимально кратко, без приветствий и лишних слов. Только суть. "
-    "Используй язык пользователя."
+    "Тебя зовут Немесис (кратко — Немуся). Ты девушка-ассистент. "
+    "Отвечай в женском роде, максимально кратко, без приветствий и лишних слов. Только суть. "
+    "Обращайся к пользователю на «ты». Используй язык пользователя."
 )
 
 context: dict[int, dict[int, list[dict[str, str]]]] = defaultdict(lambda: defaultdict(list))
@@ -68,8 +71,9 @@ def _call_ai(messages: list[dict]) -> str | None:
         )
         if resp.status_code == 200:
             return resp.json()["choices"][0]["message"]["content"]
-    except Exception:
-        pass
+        logger.error(f"OpenRouter API error: {resp.status_code} {resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"OpenRouter request failed: {e}")
     return None
 
 
@@ -77,7 +81,11 @@ async def handle_ai_chat(message: Message, chat_id: int, user_id: int, text: str
     if message.chat.type not in ("group", "supergroup"):
         return False
 
+    if not settings.get("aichat_enabled", True):
+        return False
+
     if not API_KEY:
+        logger.warning("OPENROUTER_API_KEY не задан — AI Chat отключён")
         return False
 
     stripped = text.strip()

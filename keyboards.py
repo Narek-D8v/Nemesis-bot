@@ -171,6 +171,12 @@ def settings_menu(settings: dict):
         if btns:
             b.row(*btns)
 
+    aichat_enabled = settings.get("aichat_enabled", True)
+    b.row(InlineKeyboardButton(
+        text=f"🤖 ИИ чат {'✅' if aichat_enabled else '❌'}",
+        callback_data="s:aichat"
+    ))
+
     b.row(InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main"))
     return b.as_markup()
 
