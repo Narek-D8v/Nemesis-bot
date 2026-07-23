@@ -38,7 +38,7 @@ COOLDOWN_SECONDS = 5
 DAILY_LIMIT = 20
 MAX_CONTEXT = 20
 MAX_TOKENS = 400
-MODEL = "qwen/qwen-2.5-7b-instruct:free"
+MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 
 SYSTEM_PROMPT = (
     "Ты — Немуся, та самая пикми девушка-ассистент. "
@@ -268,32 +268,39 @@ async def _get_session() -> aiohttp.ClientSession:
         _http_session = aiohttp.ClientSession()
     return _http_session
 
-async def _call_ai(messages: list[dict]) -> str | None:
-    try:
-        session = await _get_session()
-        async with session.post(
-            OPENROUTER_URL,
-            headers={
-                "Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "max_tokens": MAX_TOKENS,
-                "temperature": 0.7,
-            },
-            timeout=aiohttp.ClientTimeout(total=60),
-        ) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                return data["choices"][0]["message"]["content"]
-            text = await resp.text()
-            logger.error(f"OpenRouter API error: {resp.status} {text[:200]}")
-    except asyncio.TimeoutError:
-        logger.warning("OpenRouter request timed out after 60s")
-    except Exception as e:
-        logger.error(f"OpenRouter request failed: {e}")
+FALLBACK_MODEL = "openrouter/free"
+
+async def _call_ai(messages: list[dict], model: str = MODEL) -> str | None:
+    models_to_try = [model]
+    if model != FALLBACK_MODEL:
+        models_to_try.append(FALLBACK_MODEL)
+
+    for attempt_model in models_to_try:
+        try:
+            session = await _get_session()
+            async with session.post(
+                OPENROUTER_URL,
+                headers={
+                    "Authorization": f"Bearer {API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": attempt_model,
+                    "messages": messages,
+                    "max_tokens": MAX_TOKENS,
+                    "temperature": 0.7,
+                },
+                timeout=aiohttp.ClientTimeout(total=60),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data["choices"][0]["message"]["content"]
+                text = await resp.text()
+                logger.error(f"OpenRouter API error ({attempt_model}): {resp.status} {text[:200]}")
+        except asyncio.TimeoutError:
+            logger.warning(f"OpenRouter request timed out after 60s ({attempt_model})")
+        except Exception as e:
+            logger.error(f"OpenRouter request failed ({attempt_model}): {e}")
     return None
 
 
