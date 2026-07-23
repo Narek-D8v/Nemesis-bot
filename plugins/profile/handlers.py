@@ -1,8 +1,12 @@
+import asyncio
+import io
+import os
 import re
+import tempfile
 import time
 
 import aiosqlite
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 
 from bot import bot, logger
 from db import db
@@ -928,6 +932,43 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
     return False
 
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+
+_CHART_BG = "#1a1a2e"
+_CHART_TEXT = "#e0e0e0"
+_CHART_BAR = "#e94560"
+
+def _make_activity_chart(data: list[tuple[str, int]]) -> bytes | None:
+    if len(data) < 2:
+        return None
+    labels, values = zip(*data)
+    fig, ax = plt.subplots(figsize=(5, 2.8))
+    fig.patch.set_facecolor(_CHART_BG)
+    ax.set_facecolor(_CHART_BG)
+    colors = plt.cm.RdYlGn([max(0.3, v / max(values)) for v in values])
+    bars = ax.barh(range(len(labels)), values, color=colors, height=0.6, edgecolor="none")
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels, fontsize=8, color=_CHART_TEXT)
+    ax.invert_yaxis()
+    ax.set_xlabel("Сообщения", fontsize=7, color=_CHART_TEXT)
+    ax.tick_params(axis="x", colors=_CHART_TEXT, labelsize=7)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.xaxis.grid(True, alpha=0.15, color=_CHART_TEXT)
+    ax.set_axisbelow(True)
+    for bar, v in zip(bars, values):
+        ax.text(bar.get_width() + max(values) * 0.01, bar.get_y() + bar.get_height() / 2,
+                str(v), va="center", fontsize=7, color=_CHART_TEXT)
+    plt.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=130, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
 def _bar(value: int, max_val: int = 100, size: int = 10) -> str:
     filled = min(int(value / max(max_val, 1) * size), size)
     return "█" * filled + "░" * (size - filled)
@@ -964,6 +1005,11 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
             (target_id,)
         )
         achievements = (await ac.fetchone())[0]
+        acr = await conn.execute(
+            "SELECT chat_id, msg_count FROM user_last_message WHERE user_id = ? AND msg_count > 0 ORDER BY msg_count DESC LIMIT 8",
+            (target_id,)
+        )
+        activity = await acr.fetchall()
 
     if pcr and not pcr[3]:
         await message.reply("🔒 Пользователь скрыл свою анкету.")
@@ -1007,7 +1053,11 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
             lines.append("║ " + " | ".join(info2))
         if reg:
             dt = time.strftime("%d.%m.%Y", time.localtime(reg))
-            lines.append(f"║ 📅 Регистрация: {dt}")
+            delta = int(time.time()) - reg
+            months = delta // (86400 * 30)
+            days = (delta % (86400 * 30)) // 86400
+            dur = f"{months} мес {days} дн" if months else f"{days} дн"
+            lines.append(f"║ ⏱️ Во вселенной Немесис: <b>с {dt}</b> ({dur})")
         if motto:
             lines.append(f"║ 💬 «{esc(motto)}»")
 
@@ -1021,9 +1071,30 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
     lines.append(f"║ 🌟 Звёзды: {stars}")
     lines.append(f"║ {_bar(stars, s_max)}")
     lines.append(f"║ 👥 Подписчики: {subs}  |  ⚠️ Варны: {warns}  |  🏆 Ачивки: {achievements}")
-
     lines.append(f"╚═══════════════════════════════════╝")
-    await message.reply("\n".join(lines))
+
+    text = "\n".join(lines)
+
+    if activity and len(activity) >= 2:
+        chart_data = []
+        for cid, cnt in activity:
+            label = f"Чат {str(cid)[-4:]}"
+            chart_data.append((label, cnt))
+        try:
+            chart_bytes = await asyncio.to_thread(_make_activity_chart, chart_data)
+            if chart_bytes:
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+                tmp.write(chart_bytes)
+                tmp.close()
+                try:
+                    await message.reply_photo(FSInputFile(tmp.name), caption=text)
+                finally:
+                    os.unlink(tmp.name)
+                return
+        except Exception as e:
+            logger.warning(f"Chart generation failed: {e}")
+
+    await message.reply(text)
 
 
 async def _handle_pm_commands(message: Message, chat_id: int, user_id: int, text: str) -> bool:
@@ -1055,7 +1126,11 @@ async def _handle_pm_commands(message: Message, chat_id: int, user_id: int, text
                 lines.append(f"💬 Девиз: {esc(pgr[4])}")
             if pgr[5]:
                 dt = time.strftime("%d.%m.%Y", time.localtime(pgr[5]))
-                lines.append(f"📅 Регистрация: {dt}")
+                delta = int(time.time()) - pgr[5]
+                months = delta // (86400 * 30)
+                days = (delta % (86400 * 30)) // 86400
+                dur = f"{months} мес {days} дн" if months else f"{days} дн"
+                lines.append(f"⏱️ Во вселенной Немесис: с <b>{dt}</b> ({dur})")
         else:
             lines.append("Анкета не заполнена.")
         await message.reply("\n".join(lines))
