@@ -928,6 +928,10 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
     return False
 
 
+def _bar(value: int, max_val: int = 100, size: int = 10) -> str:
+    filled = min(int(value / max(max_val, 1) * size), size)
+    return "█" * filled + "░" * (size - filled)
+
 async def _show_card(message: Message, chat_id: int, target_id: int):
     async with aiosqlite.connect(db.db_path) as conn:
         pc = await conn.execute(
@@ -950,6 +954,16 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
             (target_id,)
         )
         subs = (await subsc.fetchone())[0]
+        wc = await conn.execute(
+            "SELECT COUNT(*) FROM warns WHERE chat_id = ? AND user_id = ? AND is_active = 1",
+            (chat_id, target_id)
+        )
+        warns = (await wc.fetchone())[0]
+        ac = await conn.execute(
+            "SELECT COUNT(*) FROM profile_achievements WHERE user_id = ?",
+            (target_id,)
+        )
+        achievements = (await ac.fetchone())[0]
 
     if pcr and not pcr[3]:
         await message.reply("🔒 Пользователь скрыл свою анкету.")
@@ -957,14 +971,19 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
 
     name = await resolve_name(chat_id, target_id)
 
-    lines = [f"👤 <b>{name}</b>"]
+    lines = [f"╔══════════ <b>{name}</b> ══════════╗"]
+
     if pcr:
+        info = []
         if pcr[0]:
-            lines.append(f"📛 Ник: {esc(pcr[0])}")
+            info.append(f"📛 {esc(pcr[0])}")
         if pcr[1]:
-            lines.append(f"🎖️ Звание: {esc(pcr[1])}")
+            info.append(f"🎖️ {esc(pcr[1])}")
         if pcr[2]:
-            lines.append("🏡 Гражданин чата")
+            info.append("🏡 Гражданин")
+        if info:
+            lines.append("║ " + " | ".join(info))
+
     if pgr:
         gender = pgr[0]
         city = pgr[1]
@@ -972,27 +991,38 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
         bday_vis = pgr[3]
         motto = pgr[5]
         reg = pgr[7]
+        info2 = []
         if gender:
-            lines.append(f"⚤ Пол: {esc(gender)}")
+            info2.append(f"⚤ {esc(gender)}")
         if city:
-            lines.append(f"🏙️ Город: {esc(city)}")
+            info2.append(f"🏙️ {esc(city)}")
         if bday_raw:
             if bday_vis == 'full':
-                lines.append(f"🎂 ДР: {bday_raw}")
+                info2.append(f"🎂 {bday_raw}")
             elif bday_vis == 'месяц' or bday_vis == 'месяц':
-                lines.append(f"🎂 ДР: {'.'.join(bday_raw.split('.')[1:])}")
+                info2.append(f"🎂 {'.'.join(bday_raw.split('.')[1:])}")
             elif bday_vis == 'год':
-                lines.append(f"🎂 ДР: {bday_raw.split('.')[-1]}")
-        if motto:
-            lines.append(f"💬 Девиз: {esc(motto)}")
+                info2.append(f"🎂 {bday_raw.split('.')[-1]}")
+        if info2:
+            lines.append("║ " + " | ".join(info2))
         if reg:
             dt = time.strftime("%d.%m.%Y", time.localtime(reg))
-            lines.append(f"📅 Регистрация: {dt}")
-    if repr_:
-        lines.append(f"⭐ Рейтинг: {repr_[0]} | 🌟 {repr_[1]}")
-    if subs:
-        lines.append(f"👥 Подписчики: {subs}")
+            lines.append(f"║ 📅 Регистрация: {dt}")
+        if motto:
+            lines.append(f"║ 💬 «{esc(motto)}»")
 
+    rating = repr_[0] if repr_ else 0
+    stars = repr_[1] if repr_ else 0
+    r_max = max(rating, 100)
+    s_max = max(stars, 20)
+    lines.append("╠══════════ <b>Статистика</b> ══════════╣")
+    lines.append(f"║ ⭐ Рейтинг: {rating}")
+    lines.append(f"║ {_bar(rating, r_max)}")
+    lines.append(f"║ 🌟 Звёзды: {stars}")
+    lines.append(f"║ {_bar(stars, s_max)}")
+    lines.append(f"║ 👥 Подписчики: {subs}  |  ⚠️ Варны: {warns}  |  🏆 Ачивки: {achievements}")
+
+    lines.append(f"╚═══════════════════════════════════╝")
     await message.reply("\n".join(lines))
 
 
