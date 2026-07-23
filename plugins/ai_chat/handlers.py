@@ -1,11 +1,10 @@
-import asyncio
 import logging
 import re
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
 
-import requests
+import aiohttp
 from aiogram.types import Message
 
 from config import OPENROUTER_API_KEY as API_KEY
@@ -52,25 +51,28 @@ async def _check_premium(chat_id: int, user_id: int) -> bool:
     return await db.is_premium_group(chat_id) or await db.is_premium_user(user_id)
 
 
-def _call_ai(messages: list[dict]) -> str | None:
+async def _call_ai(messages: list[dict]) -> str | None:
     try:
-        resp = requests.post(
-            OPENROUTER_URL,
-            headers={
-                "Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": MODEL,
-                "messages": messages,
-                "max_tokens": MAX_TOKENS,
-                "temperature": 0.3,
-            },
-            timeout=30,
-        )
-        if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"]
-        logger.error(f"OpenRouter API error: {resp.status_code} {resp.text[:200]}")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                OPENROUTER_URL,
+                headers={
+                    "Authorization": f"Bearer {API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": MODEL,
+                    "messages": messages,
+                    "max_tokens": MAX_TOKENS,
+                    "temperature": 0.3,
+                },
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return data["choices"][0]["message"]["content"]
+                text = await resp.text()
+                logger.error(f"OpenRouter API error: {resp.status} {text[:200]}")
     except Exception as e:
         logger.error(f"OpenRouter request failed: {e}")
     return None
@@ -157,7 +159,7 @@ async def _process_ai_request(message: Message, chat_id: int, user_id: int, ques
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + user_context
 
-    answer = await asyncio.to_thread(_call_ai, messages)
+    answer = await _call_ai(messages)
 
     if answer is None:
         await thinking_msg.edit_text(f"😔 {user_link} ошибка при обращении к AI. Попробуй позже.")
