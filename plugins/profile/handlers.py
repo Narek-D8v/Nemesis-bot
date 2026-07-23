@@ -950,7 +950,7 @@ def _make_activity_chart(data: list[tuple[int, int]]) -> bytes | None:
         return None
     days = [str(d % 10000)[-2:].lstrip("0") + "." + str(d // 100 % 100) for d, _ in data]
     values = [v for _, v in data]
-    fig, ax = plt.subplots(figsize=(5, 2.8))
+    fig, ax = plt.subplots(figsize=(5.5, 3.5))
     fig.patch.set_facecolor(_CHART_BG)
     ax.set_facecolor(_CHART_BG)
     bars = ax.bar(range(len(days)), values, color=_CHART_BAR, width=0.6, edgecolor="none")
