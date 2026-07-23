@@ -820,10 +820,18 @@ class Database:
                 (chat_id, user_id, now, now)
             )
             await conn.execute(
-                """INSERT INTO activity_daily (user_id, day, msg_count) VALUES (?, ?, 1)
-                   ON CONFLICT(user_id, day) DO UPDATE SET msg_count = msg_count + 1""",
-                (user_id, day)
+                """INSERT INTO profile_global (user_id, registered_at) VALUES (?, ?)
+                   ON CONFLICT(user_id) DO UPDATE SET registered_at = CASE WHEN registered_at = 0 THEN ? ELSE registered_at END""",
+                (user_id, now, now)
             )
+            try:
+                await conn.execute(
+                    """INSERT INTO activity_daily (user_id, day, msg_count) VALUES (?, ?, 1)
+                       ON CONFLICT(user_id, day) DO UPDATE SET msg_count = msg_count + 1""",
+                    (user_id, day)
+                )
+            except Exception as e:
+                logger.error(f"activity_daily insert failed: {e}")
             await conn.commit()
 
     async def get_daily_activity(self, user_id: int, days: int = 10) -> list[tuple[int, int]]:
