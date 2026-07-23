@@ -401,6 +401,10 @@ async def _process_ai_request(message: Message, chat_id: int, user_id: int, ques
     daily_usage[user_id][today] += 1
 
     remaining = DAILY_LIMIT - daily_usage[user_id][today]
-    await thinking_msg.edit_text(
-        f"{_sanitize(answer)}\n\n💬 Осталось запросов сегодня: {remaining}"
-    )
+    text = f"{_sanitize(answer)}\n\n💬 Осталось запросов сегодня: {remaining}"
+    try:
+        await thinking_msg.edit_text(text)
+    except Exception:
+        clean = re.sub(r'<[^>]+>', '', answer)
+        text = f"{esc(clean)}\n\n💬 Осталось запросов сегодня: {remaining}"
+        await thinking_msg.edit_text(text)
