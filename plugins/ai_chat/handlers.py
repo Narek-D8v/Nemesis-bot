@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import requests
 from aiogram.types import Message
 
-from config import OPENROUTER_API_KEY
+from config import OPENROUTER_API_KEY as API_KEY
 from db import db
 from utils import esc
 

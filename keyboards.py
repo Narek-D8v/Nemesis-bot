@@ -100,7 +100,9 @@ def protection_menu(settings: dict):
     return b.as_markup()
 
 
-def settings_menu(settings: dict):
+async def settings_menu(settings: dict, chat_id: int = 0):
+    from db import db
+    is_premium = await db.is_premium_group(chat_id) if chat_id else False
     b = InlineKeyboardBuilder()
 
     warn_system = settings.get("warn_system", True)
@@ -172,10 +174,16 @@ def settings_menu(settings: dict):
             b.row(*btns)
 
     aichat_enabled = settings.get("aichat_enabled", True)
-    b.row(InlineKeyboardButton(
-        text=f"🤖 ИИ чат {'✅' if aichat_enabled else '❌'}",
-        callback_data="s:aichat"
-    ))
+    if is_premium:
+        b.row(InlineKeyboardButton(
+            text=f"🤖 ИИ чат {'✅' if aichat_enabled else '❌'}",
+            callback_data="s:aichat"
+        ))
+    else:
+        b.row(InlineKeyboardButton(
+            text="🔒 ИИ чат (Premium)",
+            callback_data="s:aichat_locked"
+        ))
 
     b.row(InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main"))
     return b.as_markup()
