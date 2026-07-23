@@ -394,5 +394,5 @@ async def _process_ai_request(message: Message, chat_id: int, user_id: int, ques
 
     remaining = DAILY_LIMIT - daily_usage[user_id][today]
     await thinking_msg.edit_text(
-        f"🤖 {_sanitize(answer)}\n\n💬 Осталось запросов сегодня: {remaining}"
+        f"{_sanitize(answer)}\n\n💬 Осталось запросов сегодня: {remaining}"
     )
