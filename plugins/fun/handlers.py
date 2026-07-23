@@ -440,3 +440,107 @@ async def handle_addiction(message: Message, chat_id: int, user_id: int, text: s
         f"<blockquote>{addiction_desc}</blockquote>"
     )
     return True
+
+
+# === моё состояние ===
+
+from .states_data import STATES
+
+
+async def handle_state(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped != "моё состояние":
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("😊 Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    now = int(time.time())
+    user_link = _get_user_link(message)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT state_name, state_desc, created_at FROM fun_states_record WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id)
+        )
+        row = await cursor.fetchone()
+
+        if row and (now - row[2]) < 43200:
+            await message.reply(
+                f"🌀 {user_link} ваше сегодняшнее психологическое состояние уже было определено:\n"
+                f"<b>{row[0]}</b>\n"
+                f"<blockquote>{row[1]}</blockquote>"
+            )
+            return True
+
+    state_name, state_desc = random.choice(STATES)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_states_record (user_id, chat_id, state_name, state_desc, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, chat_id, state_name, state_desc, now)
+        )
+        await conn.commit()
+
+    await message.reply(
+        f"🌀 {user_link} ваше сегодняшнее психологическое состояние:\n"
+        f"<b>{state_name}</b>\n"
+        f"<blockquote>{state_desc}</blockquote>"
+    )
+    return True
+
+
+# === моя философия ===
+
+from .philosophies_data import PHILOSOPHIES
+
+
+async def handle_philosophy(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped != "моя философия":
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("😊 Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    now = int(time.time())
+    user_link = _get_user_link(message)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT philosophy_name, philosophy_desc, created_at FROM fun_philosophies_record WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id)
+        )
+        row = await cursor.fetchone()
+
+        if row and (now - row[2]) < 43200:
+            await message.reply(
+                f"🏛️ {user_link} ваша сегодняшняя философия уже была определена:\n"
+                f"<b>{row[0]}</b>\n"
+                f"<blockquote>{row[1]}</blockquote>"
+            )
+            return True
+
+    philosophy_name, philosophy_desc = random.choice(PHILOSOPHIES)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_philosophies_record (user_id, chat_id, philosophy_name, philosophy_desc, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, chat_id, philosophy_name, philosophy_desc, now)
+        )
+        await conn.commit()
+
+    await message.reply(
+        f"🏛️ {user_link} ваша сегодняшняя философия:\n"
+        f"<b>{philosophy_name}</b>\n"
+        f"<blockquote>{philosophy_desc}</blockquote>"
+    )
+    return True
