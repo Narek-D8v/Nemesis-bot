@@ -1071,20 +1071,24 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
 
     text = "\n".join(lines)
 
-    if activity and len(activity) >= 2:
-        try:
-            chart_bytes = await asyncio.to_thread(_make_activity_chart, activity)
-            if chart_bytes:
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
-                tmp.write(chart_bytes)
-                tmp.close()
-                try:
-                    await message.reply_photo(FSInputFile(tmp.name), caption=text)
-                finally:
-                    os.unlink(tmp.name)
-                return
-        except Exception as e:
-            logger.warning(f"Chart generation failed: {e}")
+    try:
+        act = dict(activity or [])
+        days_full = []
+        for i in range(9, -1, -1):
+            d = int(time.strftime("%Y%m%d", time.localtime(time.time() - i * 86400)))
+            days_full.append((d, act.get(d, 0)))
+        chart_bytes = await asyncio.to_thread(_make_activity_chart, days_full)
+        if chart_bytes:
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            tmp.write(chart_bytes)
+            tmp.close()
+            try:
+                await message.reply_photo(FSInputFile(tmp.name), caption=text)
+            finally:
+                os.unlink(tmp.name)
+            return
+    except Exception as e:
+        logger.warning(f"Chart generation failed: {e}")
 
     await message.reply(text)
 
