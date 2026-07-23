@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 import re
 import time
 from collections import defaultdict
@@ -9,13 +8,13 @@ from datetime import datetime, timezone
 import requests
 from aiogram.types import Message
 
+from config import OPENROUTER_API_KEY
 from db import db
 from utils import esc
 
 logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
-API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
 COOLDOWN_SECONDS = 5
 DAILY_LIMIT = 20
