@@ -1,6 +1,9 @@
 import logging
+import re
 
 import aiosqlite
+from aiogram import F, Router
+from aiogram.types import Message
 
 from core.plugin_manager import BasePlugin
 from core.plugin_hooks import register_hook, unregister_hook
@@ -8,12 +11,25 @@ from db import db
 
 logger = logging.getLogger(__name__)
 
+ANKETA_ROUTER = Router()
+ANKETA_RE = re.compile(r'^(моя\s+)?анкета\b', re.IGNORECASE)
+
+@ANKETA_ROUTER.message(F.chat.type.in_({"group", "supergroup"}), F.text, lambda msg: msg.text and ANKETA_RE.match(msg.text.strip()))
+async def anketta_direct_handler(message: Message):
+    from .handlers import handle_profile_commands
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    text = message.text or ""
+    settings = await db.get_settings(chat_id)
+    await handle_profile_commands(message, chat_id, user_id, text, settings)
+
 
 class ProfilePlugin(BasePlugin):
     VERSION = "1.0.0"
 
     async def on_load(self):
         await self._init_db()
+        self.router.include_router(ANKETA_ROUTER)
         from .handlers import handle_profile_commands
         register_hook("profile", handle_profile_commands)
         logger.info("Profile plugin loaded")

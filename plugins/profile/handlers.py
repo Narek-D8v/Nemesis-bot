@@ -932,17 +932,21 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
     return False
 
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import matplotlib.font_manager as fm
+    _HAS_MPL = True
+except ImportError:
+    _HAS_MPL = False
 
 _CHART_BG = "#1a1a2e"
 _CHART_TEXT = "#e0e0e0"
 _CHART_BAR = "#e94560"
 
 def _make_activity_chart(data: list[tuple[str, int]]) -> bytes | None:
-    if len(data) < 2:
+    if not _HAS_MPL or len(data) < 2:
         return None
     labels, values = zip(*data)
     fig, ax = plt.subplots(figsize=(5, 2.8))
