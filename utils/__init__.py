@@ -205,7 +205,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings["duplicate_block"] = True
         settings["mention_block"] = False
     elif level == 2:
-        settings.setdefault("antispam", {})["threshold"] = 10
+        settings.setdefault("antispam", {})["threshold"] = 20
         settings.setdefault("filter_links", {})["action"] = "warn_mute"
         settings["block_no_avatar"] = True
         settings["min_account_age_days"] = 7
@@ -213,7 +213,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings["duplicate_block"] = True
         settings["mention_block"] = True
     elif level == 3:
-        settings.setdefault("antispam", {})["threshold"] = 3
+        settings.setdefault("antispam", {})["threshold"] = 10
         settings.setdefault("filter_links", {})["action"] = "ban"
         settings["block_no_avatar"] = True
         settings["min_account_age_days"] = 14

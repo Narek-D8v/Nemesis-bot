@@ -26,7 +26,7 @@ def protection_menu(settings: dict):
     antispam_status = "✅ Вкл" if antispam.get("enabled") else "❌ Выкл"
     b.row(
         InlineKeyboardButton(text=f"🚫 Антиспам {antispam_status}", callback_data="a:t"),
-        InlineKeyboardButton(text=f"📊 Порог: {antispam.get('threshold', 0)}" if antispam.get('enabled') else "📊 Порог: 🔒", callback_data="a:threshold")
+        InlineKeyboardButton(text=f"📊 Порог: {antispam.get('threshold', 60)}" if antispam.get('enabled') else "📊 Порог: 🔒", callback_data="a:threshold")
     )
 
     captcha = settings.get("captcha", {})
@@ -265,7 +265,6 @@ def threshold_menu():
         InlineKeyboardButton(text="60", callback_data="a:s:60")
     )
     b.row(
-        InlineKeyboardButton(text="∞", callback_data="a:s:0"),
         InlineKeyboardButton(text="✏️ Свой", callback_data="a:s:custom"),
         InlineKeyboardButton(text="🔙 Назад", callback_data="menu:protection")
     )

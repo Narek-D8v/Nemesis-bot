@@ -97,7 +97,7 @@ class AntiFloodMiddleware(BaseMiddleware):
         if not antispam.get("enabled"):
             return await handler(event, data)
 
-        threshold = antispam.get("threshold", 0)
+        threshold = antispam.get("threshold", 60)
         if threshold == 0:
             return await handler(event, data)
 

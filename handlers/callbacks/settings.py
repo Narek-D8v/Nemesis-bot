@@ -32,6 +32,8 @@ async def antispam_callback(callback: CallbackQuery, state: FSMContext):
 
     if action == "t":
         settings["antispam"]["enabled"] = not settings["antispam"]["enabled"]
+        if settings["antispam"]["enabled"] and settings["antispam"].get("threshold", 0) == 0:
+            settings["antispam"]["threshold"] = 60
         await db.save_settings(chat_id, settings)
         status = "включён" if settings["antispam"]["enabled"] else "выключен"
         await callback.answer(f"Антиспам {status}")
@@ -45,18 +47,18 @@ async def antispam_callback(callback: CallbackQuery, state: FSMContext):
             reply_markup=threshold_menu()
         )
     elif action == "s":
+        valid_presets = (10, 20, 30, 40, 50, 60)
         try:
             threshold = int(parts[2])
         except (ValueError, IndexError):
             await callback.answer("❌ Некорректное значение", show_alert=True)
             return
-        valid_presets = (0, 10, 20, 30, 40, 50, 60)
         if threshold not in valid_presets:
             await callback.answer("❌ Недопустимый порог", show_alert=True)
             return
         settings["antispam"]["threshold"] = threshold
         await db.save_settings(chat_id, settings)
-        label = "∞" if threshold == 0 else str(threshold)
+        label = str(threshold)
         await callback.answer(f"Порог: {label}")
         settings["_vt_premium"] = await db.is_premium_group(chat_id)
         await safe_edit(callback, 
