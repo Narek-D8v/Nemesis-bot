@@ -165,6 +165,14 @@ async def _cleanup(*paths: str):
             pass
 
 
+async def _delete_proc_msg(proc_msg):
+    if proc_msg:
+        try:
+            await proc_msg.delete()
+        except Exception:
+            pass
+
+
 async def handle_circle(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
     if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         return False
@@ -193,6 +201,7 @@ async def handle_circle(message: Message, chat_id: int, user_id: int, text: str,
             await message.reply("❌ Результат слишком большой для отправки.")
             return True
         await _reply_video_note(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Circle error: {e}")
         await message.reply("❌ Ошибка обработки видео.")
@@ -222,6 +231,7 @@ async def handle_bw(message: Message, chat_id: int, user_id: int, text: str, set
     try:
         processor.black_white(input_path, output_path)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"BW error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -254,6 +264,7 @@ async def handle_ascii(message: Message, chat_id: int, user_id: int, text: str, 
     try:
         processor.ascii_art(input_path, output_path, chars)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"ASCII error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -283,6 +294,7 @@ async def handle_edges(message: Message, chat_id: int, user_id: int, text: str, 
     try:
         processor.edge_lines(input_path, output_path)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Edges error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -312,6 +324,7 @@ async def handle_mirror(message: Message, chat_id: int, user_id: int, text: str,
     try:
         processor.mirror(input_path, output_path)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Mirror error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -341,6 +354,7 @@ async def handle_pixelate(message: Message, chat_id: int, user_id: int, text: st
     try:
         processor.pixelate(input_path, output_path, block_size=16)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Pixelate error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -370,6 +384,7 @@ async def handle_negative(message: Message, chat_id: int, user_id: int, text: st
     try:
         processor.negative(input_path, output_path)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Negative error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -399,6 +414,7 @@ async def handle_scanlines(message: Message, chat_id: int, user_id: int, text: s
     try:
         processor.scanlines(input_path, output_path)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Scanlines error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -428,6 +444,7 @@ async def handle_triggered(message: Message, chat_id: int, user_id: int, text: s
     try:
         processor.triggered(input_path, output_path)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Triggered error: {e}")
         await message.reply("❌ Ошибка обработки.")
@@ -460,6 +477,7 @@ async def handle_demotivator(message: Message, chat_id: int, user_id: int, text:
     try:
         processor.demotivator(input_path, output_path, text=text_arg)
         await _reply_photo(message, output_path)
+        await _delete_proc_msg(proc_msg)
     except Exception as e:
         logger.error(f"Demotivator error: {e}")
         await message.reply("❌ Ошибка обработки.")

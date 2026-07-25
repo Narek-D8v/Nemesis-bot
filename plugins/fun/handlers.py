@@ -9,6 +9,11 @@ from db import db
 from utils import esc, format_duration
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
+from .criminal_data import CRIMINAL_ARTICLES
+from .sins_data import SINS
+from .addictions_data import ADDICTIONS
+from .states_data import STATES
+from .philosophies_data import PHILOSOPHIES
 
 SHIP_CMD = re.compile(r'^шипперим\b', re.IGNORECASE)
 OPTOUT_CMD = re.compile(r'^[-+]\s*шип\s+меня\b', re.IGNORECASE)
@@ -23,8 +28,6 @@ VIBERI_CMD = re.compile(r'^!выбери\s+(.+?)\s+или\s+(.+)$', re.IGNORECAS
 DANET_CMD = re.compile(r'^!данет\s+', re.IGNORECASE)
 ZHREBIY_CMD = re.compile(r'^!жребий\b', re.IGNORECASE)
 KTO_CMD = re.compile(r'^!кто\b', re.IGNORECASE)
-
-PING_WORDS = {'пинг', 'кинг', 'пиу', 'бот'}
 
 
 async def handle_shipping(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
@@ -284,9 +287,6 @@ async def handle_ping(message: Message, chat_id: int, user_id: int, text: str, s
 
 # === моя статья (УК РФ) ===
 
-from .criminal_data import CRIMINAL_ARTICLES
-
-
 def _get_user_link(message: Message) -> str:
     user = message.from_user
     name = esc(user.first_name or "Пользователь")
@@ -340,9 +340,6 @@ async def handle_criminal_article(message: Message, chat_id: int, user_id: int, 
 
 # === мой грех ===
 
-from .sins_data import SINS
-
-
 async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
     stripped = text.strip().lower()
     if stripped != "мой грех":
@@ -391,9 +388,6 @@ async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, se
 
 
 # === моя зависимость ===
-
-from .addictions_data import ADDICTIONS
-
 
 async def handle_addiction(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
     stripped = text.strip().lower()
@@ -444,9 +438,6 @@ async def handle_addiction(message: Message, chat_id: int, user_id: int, text: s
 
 # === моё состояние ===
 
-from .states_data import STATES
-
-
 async def handle_state(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
     stripped = text.strip().lower()
     if stripped != "моё состояние":
@@ -495,9 +486,6 @@ async def handle_state(message: Message, chat_id: int, user_id: int, text: str, 
 
 
 # === моя философия ===
-
-from .philosophies_data import PHILOSOPHIES
-
 
 async def handle_philosophy(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
     stripped = text.strip().lower()

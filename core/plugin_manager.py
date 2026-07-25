@@ -101,10 +101,7 @@ class PluginManager:
             missing = set(plugin_class.REQUIRED_PERMISSIONS) - set(plugin._granted_permissions)
             if missing:
                 plugin.logger.warning(f"Missing permissions: {missing}")
-                if not plugin.is_enabled():
-                    plugin.logger.warning(f"Plugin '{plugin_name}' disabled due to missing permissions")
-                    self.plugins[plugin_name] = plugin
-                    return
+                plugin.logger.warning(f"Plugin '{plugin_name}' may not function correctly without required permissions")
 
             await plugin.on_load()
             await plugin.register_handlers(self.dp)

@@ -23,6 +23,9 @@ def _ensure_font(size: int = 40):
     for path in (
         str(Path(__file__).parent.parent.parent / "utils" / "fonts" / "impact.ttf"),
         "arial.ttf",
+        "C:\\Windows\\Fonts\\arial.ttf",
+        "C:\\Windows\\Fonts\\DejaVuSans.ttf",
+        "C:\\Windows\\Fonts\\impact.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",

@@ -1,21 +1,13 @@
 import os
-import logging
+from dotenv import load_dotenv
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+load_dotenv()
 
-API_ID = os.environ.get('API_ID')
-API_HASH = os.environ.get('API_HASH')
-PORT = int(os.environ.get('PORT', 8080))
-STRING_SESSION = os.environ.get('STRING_SESSION')
-OWNER_ID_RAW = os.environ.get('OWNER_ID')
-MEDIA_DIR = os.environ.get('MEDIA_DIR', './media')
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+raw = os.getenv("ADMIN_ID", "")
+ADMIN_ID = int(raw) if raw and raw.isdigit() else 0
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 
-if not API_ID or not API_HASH:
-    raise ValueError("API_ID и API_HASH обязательны. Укажите их в .env")
-if not OWNER_ID_RAW:
-    raise ValueError("OWNER_ID обязателен. Укажите Telegram ID владельца в .env")
-OWNER_ID = int(OWNER_ID_RAW)
-
-MAX_COOLDOWN_ENTRIES = 500
-MAX_FILE_SIZE_MB = 1500
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN not set in .env file")

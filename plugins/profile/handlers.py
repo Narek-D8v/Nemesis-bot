@@ -1041,7 +1041,7 @@ async def _show_card(message: Message, chat_id: int, target_id: int):
         if bday_raw:
             if bday_vis == 'full':
                 info2.append(f"🎂 {bday_raw}")
-            elif bday_vis == 'месяц' or bday_vis == 'месяц':
+            elif bday_vis == 'месяц':
                 info2.append(f"🎂 {'.'.join(bday_raw.split('.')[1:])}")
             elif bday_vis == 'год':
                 info2.append(f"🎂 {bday_raw.split('.')[-1]}")
