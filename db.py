@@ -815,6 +815,15 @@ class Database:
                 logger.error(f"activity_daily insert failed: {e}")
             await conn.commit()
 
+    async def get_daily_activity(self, user_id: int, days: int = 10) -> list[tuple[int, int]]:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT day, msg_count FROM activity_daily WHERE user_id = ? ORDER BY day DESC LIMIT ?",
+                (user_id, days)
+            )
+            rows = await cursor.fetchall()
+            return rows or []
+
     async def get_users_by_msg_count(self, chat_id: int, min_count: int = 0, max_count: int | None = None, since: int | None = None) -> list:
         if since is None:
             since = 0
