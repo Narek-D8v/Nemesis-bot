@@ -189,7 +189,7 @@ def format_duration(minutes: int) -> str:
 
 def apply_aggression_level(settings: dict, level: int):
     if level == 0:
-        settings.setdefault("antispam", {})["threshold"] = 15
+        settings.setdefault("antispam", {})["threshold"] = 60
         settings.setdefault("filter_links", {})["action"] = "delete"
         settings["block_no_avatar"] = False
         settings["min_account_age_days"] = 1
@@ -197,7 +197,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings["duplicate_block"] = False
         settings["mention_block"] = False
     elif level == 1:
-        settings.setdefault("antispam", {})["threshold"] = 10
+        settings.setdefault("antispam", {})["threshold"] = 30
         settings.setdefault("filter_links", {})["action"] = "delete"
         settings["block_no_avatar"] = False
         settings["min_account_age_days"] = 3
@@ -205,7 +205,7 @@ def apply_aggression_level(settings: dict, level: int):
         settings["duplicate_block"] = True
         settings["mention_block"] = False
     elif level == 2:
-        settings.setdefault("antispam", {})["threshold"] = 5
+        settings.setdefault("antispam", {})["threshold"] = 10
         settings.setdefault("filter_links", {})["action"] = "warn_mute"
         settings["block_no_avatar"] = True
         settings["min_account_age_days"] = 7

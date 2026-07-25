@@ -6,7 +6,7 @@ import aiosqlite
 DB_PATH = "moderator_bot.db"
 
 DEFAULT_SETTINGS = {
-    "antispam": {"enabled": True, "threshold": 5},
+    "antispam": {"enabled": True, "threshold": 0},
     "captcha": {"enabled": True, "type": "button"},
     "captcha_for_suspicious": True,
     "duplicate_block": True,
