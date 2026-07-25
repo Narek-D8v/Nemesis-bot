@@ -9,6 +9,7 @@ from db import db
 from keyboards import (
     farewell_menu, greeting_menu, whitelist_menu,
     blacklist_menu, daily_rules_menu, night_mode_menu,
+    protection_menu,
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
@@ -72,7 +73,7 @@ async def add_blacklist_word(message: Message, state: FSMContext):
     settings = await db.get_settings(chat_id)
     word = message.text.lower().strip()
     if word and word not in settings.get("blacklist_words", []):
-        settings["blacklist_words"].append(word)
+        settings.setdefault("blacklist_words", []).append(word)
         await db.save_settings(chat_id, settings)
         await message.answer(
             f"✅ Слово «{word}» добавлено в чёрный список!",
@@ -96,7 +97,7 @@ async def remove_blacklist_word(message: Message, state: FSMContext):
     settings = await db.get_settings(chat_id)
     word = message.text.lower().strip()
     if word in settings.get("blacklist_words", []):
-        settings["blacklist_words"].remove(word)
+        settings["blacklist_words"] = [w for w in settings["blacklist_words"] if w != word]
         await db.save_settings(chat_id, settings)
         await message.answer(
             f"✅ Слово «{word}» удалено из чёрного списка!",
@@ -152,7 +153,7 @@ async def remove_whitelist_user(message: Message, state: FSMContext):
         target_id = int(message.text.strip())
         whitelist = settings.get("whitelist", [])
         if target_id in whitelist:
-            whitelist.remove(target_id)
+            settings["whitelist"] = [uid for uid in whitelist if uid != target_id]
             await db.save_settings(chat_id, settings)
             await message.answer(
                 f"✅ Пользователь {target_id} удалён из белого списка!",
@@ -228,6 +229,7 @@ async def set_night_start(message: Message, state: FSMContext):
             settings = await db.get_settings(chat_id)
             settings.setdefault("night_mode", {})["start"] = hour
             await db.save_settings(chat_id, settings)
+            _pending_edits.pop(user_id, None)
             await state.clear()
             await message.answer(
                 f"✅ Начало ночного режима: {hour}:00",
@@ -256,6 +258,7 @@ async def set_night_end(message: Message, state: FSMContext):
             settings = await db.get_settings(chat_id)
             settings.setdefault("night_mode", {})["end"] = hour
             await db.save_settings(chat_id, settings)
+            _pending_edits.pop(user_id, None)
             await state.clear()
             await message.answer(
                 f"✅ Конец ночного режима: {hour}:00",
@@ -291,6 +294,34 @@ async def set_night_action(message: Message, state: FSMContext):
         )
     else:
         await message.answer("❌ Введите: мут, бан или предупреждение")
+
+
+@router.message(SettingsStates.waiting_antispam_threshold)
+async def set_antispam_threshold(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
+    if not await is_admin(chat_id, user_id):
+        await message.reply("❌ Только для администраторов")
+        await state.clear()
+        return
+    try:
+        threshold = int(message.text.strip())
+        if threshold < 1:
+            await message.answer("❌ Порог должен быть больше 0")
+            return
+    except ValueError:
+        await message.answer("❌ Введите целое число (например, 25)")
+        return
+    settings = await db.get_settings(chat_id)
+    settings["antispam"]["threshold"] = threshold
+    await db.save_settings(chat_id, settings)
+    _pending_edits.pop(user_id, None)
+    await state.clear()
+    await message.answer(
+        f"✅ Порог антиспама установлен: {threshold} сообщений/мин",
+        reply_markup=protection_menu(settings)
+    )
+    logger.info(f"Antispam threshold set to {threshold} in {chat_id}")
 
 
 

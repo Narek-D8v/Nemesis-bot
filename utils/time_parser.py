@@ -31,25 +31,4 @@ def parse_time(text: str):
         return None
 
 
-def format_time(minutes: int) -> str:
-    if minutes is None:
-        return "навсегда"
-    if minutes < 60:
-        return f"{minutes} мин"
-    if minutes < 1440:
-        h = minutes // 60
-        m = minutes % 60
-        if m == 0:
-            return f"{h} ч"
-        return f"{h} ч {m} мин"
-    if minutes < 10080:
-        d = minutes // 1440
-        return f"{d} д"
-    if minutes < 43200:
-        w = minutes // 10080
-        return f"{w} н"
-    if minutes < 525600:
-        mo = minutes // 43200
-        return f"{mo} мес"
-    y = minutes // 525600
-    return f"{y} г"
+

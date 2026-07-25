@@ -4,7 +4,6 @@ from aiogram.fsm.context import FSMContext
 
 from bot import bot
 from db import db
-from utils import esc
 from keyboards import (
     protection_menu, whitelist_menu, blacklist_menu,
     night_mode_menu, daily_rules_menu, bayes_threshold_menu,

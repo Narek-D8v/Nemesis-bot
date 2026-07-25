@@ -304,6 +304,10 @@ class Database:
                     msg_count INTEGER DEFAULT 0,
                     PRIMARY KEY (user_id, day)
                 );
+                CREATE TABLE IF NOT EXISTS profile_global (
+                    user_id INTEGER PRIMARY KEY,
+                    registered_at INTEGER DEFAULT 0
+                );
             """)
             await db.commit()
 
@@ -351,9 +355,6 @@ class Database:
             if row and row[0] > int(time.time()):
                 return True
             return False
-
-    async def has_premium(self, chat_id: int) -> bool:
-        return await self.is_premium_group(chat_id)
 
     async def get_bayes_settings(self, chat_id: int) -> dict:
         settings = await self.get_settings(chat_id)
@@ -440,30 +441,6 @@ class Database:
     async def resolve_report(self, report_id: int):
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("UPDATE reports SET resolved = 1 WHERE id = ?", (report_id,))
-            await db.commit()
-
-    async def add_warning(self, chat_id: int, user_id: int, reason: str):
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "INSERT INTO warnings (chat_id, user_id, reason, timestamp) VALUES (?, ?, ?, ?)",
-                (chat_id, user_id, reason, int(time.time())),
-            )
-            await db.commit()
-
-    async def get_warnings(self, chat_id: int, user_id: int) -> list:
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute(
-                "SELECT * FROM warnings WHERE chat_id = ? AND user_id = ? ORDER BY timestamp DESC",
-                (chat_id, user_id),
-            )
-            rows = await cursor.fetchall()
-            return rows
-
-    async def clear_warnings(self, chat_id: int, user_id: int):
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "DELETE FROM warnings WHERE chat_id = ? AND user_id = ?", (chat_id, user_id)
-            )
             await db.commit()
 
     async def get_user_rank(self, chat_id: int, user_id: int) -> int:
@@ -834,23 +811,6 @@ class Database:
                 logger.error(f"activity_daily insert failed: {e}")
             await conn.commit()
 
-    async def get_daily_activity(self, user_id: int, days: int = 10) -> list[tuple[int, int]]:
-        cutoff = int(time.strftime("%Y%m%d", time.localtime(time.time() - days * 86400)))
-        async with aiosqlite.connect(self.db_path) as conn:
-            cursor = await conn.execute(
-                "SELECT day, msg_count FROM activity_daily WHERE user_id = ? AND day >= ? ORDER BY day ASC",
-                (user_id, cutoff)
-            )
-            return await cursor.fetchall()
-
-    async def get_last_message_time(self, chat_id: int, user_id: int) -> tuple | None:
-        async with aiosqlite.connect(self.db_path) as conn:
-            cursor = await conn.execute(
-                "SELECT last_msg_at, msg_count FROM user_last_message WHERE chat_id = ? AND user_id = ?",
-                (chat_id, user_id)
-            )
-            return await cursor.fetchone()
-
     async def get_users_by_msg_count(self, chat_id: int, min_count: int = 0, max_count: int | None = None, since: int | None = None) -> list:
         if since is None:
             since = 0
@@ -900,36 +860,6 @@ class Database:
             await conn.execute(
                 "DELETE FROM autokick_exits WHERE chat_id = ? AND user_id = ?",
                 (chat_id, user_id)
-            )
-            await conn.commit()
-
-    async def add_chat_link(self, chat_id: int, link: str, link_type: str, created_by: int):
-        now = int(time.time())
-        async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute(
-                "INSERT INTO chat_links (chat_id, link, type, created_at, created_by) VALUES (?, ?, ?, ?, ?)",
-                (chat_id, link, link_type, now, created_by)
-            )
-            await conn.commit()
-
-    async def get_chat_links(self, chat_id: int):
-        async with aiosqlite.connect(self.db_path) as conn:
-            cursor = await conn.execute(
-                "SELECT link, type, created_at, created_by FROM chat_links WHERE chat_id = ? ORDER BY created_at DESC",
-                (chat_id,)
-            )
-            return await cursor.fetchall()
-
-    async def clear_chat_links(self, chat_id: int):
-        async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute("DELETE FROM chat_links WHERE chat_id = ?", (chat_id,))
-            await conn.commit()
-
-    async def set_online_status(self, chat_id: int, user_id: int, is_online: bool):
-        async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute(
-                "UPDATE moderators SET is_online = ? WHERE chat_id = ? AND user_id = ?",
-                (int(is_online), chat_id, user_id)
             )
             await conn.commit()
 
@@ -995,14 +925,5 @@ class Database:
             )
             row = await cursor.fetchone()
             return row[0] if row else None
-
-    async def delete_username_cache(self, chat_id: int, username: str):
-        async with aiosqlite.connect(self.db_path) as conn:
-            await conn.execute(
-                "DELETE FROM username_cache WHERE chat_id = ? AND username = ?",
-                (chat_id, username)
-            )
-            await conn.commit()
-
 
 db = Database()

@@ -255,13 +255,18 @@ def admins_menu(is_premium: bool):
 def threshold_menu():
     b = InlineKeyboardBuilder()
     b.row(
-        InlineKeyboardButton(text="3", callback_data="a:s:3"),
-        InlineKeyboardButton(text="5", callback_data="a:s:5"),
-        InlineKeyboardButton(text="10", callback_data="a:s:10")
+        InlineKeyboardButton(text="10", callback_data="a:s:10"),
+        InlineKeyboardButton(text="20", callback_data="a:s:20"),
+        InlineKeyboardButton(text="30", callback_data="a:s:30")
     )
     b.row(
-        InlineKeyboardButton(text="15", callback_data="a:s:15"),
+        InlineKeyboardButton(text="40", callback_data="a:s:40"),
+        InlineKeyboardButton(text="50", callback_data="a:s:50"),
+        InlineKeyboardButton(text="60", callback_data="a:s:60")
+    )
+    b.row(
         InlineKeyboardButton(text="∞", callback_data="a:s:0"),
+        InlineKeyboardButton(text="✏️ Свой", callback_data="a:s:custom"),
         InlineKeyboardButton(text="🔙 Назад", callback_data="menu:protection")
     )
     return b.as_markup()

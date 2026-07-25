@@ -24,6 +24,7 @@ from utils import (
     replace_mat, has_mask, is_account_old_enough,
     has_bot_command, esc, extract_all_urls,
 )
+from utils.ad_detector import is_short_ad_message, check_url_frequency, has_invite_wide
 from keyboards import (
     captcha_correct_keyboard, greeting_menu, farewell_menu, daily_rules_menu,
 )
@@ -103,9 +104,11 @@ async def check_triggers(message: Message, chat_id: int, user_id: int, text: str
         if ttype == "spam" and settings.get("antispam", {}).get("enabled", False):
             bayes_settings = await db.get_bayes_settings(chat_id)
             if bayes_settings['enabled']:
-                from bayes import BayesClassifier
                 model = bayes_settings['model_name']
-                classifier = BayesClassifier(db.db_path, model)
+                if model not in _classifiers:
+                    from bayes import BayesClassifier
+                    _classifiers[model] = BayesClassifier(db.db_path, model)
+                classifier = _classifiers[model]
                 is_spam, confidence = await classifier.classify(text)
                 triggered = is_spam and confidence >= bayes_settings['threshold']
         elif ttype == "links" and has_url(text):
@@ -296,13 +299,8 @@ async def _train_bayes(message: Message, is_spam: bool):
     user_id = message.from_user.id
     chat_id = message.chat.id
 
-    if not await is_admin(chat_id, user_id):
-        await message.reply("❌ Только администраторы могут обучать бота.")
-        return
-
-    is_prem = await db.is_premium_group(chat_id) or await db.is_premium_user(user_id)
-    if not is_prem:
-        await message.reply("⚠️ Эта функция доступна только для Премиум-подписчиков.")
+    if not await is_admin(chat_id, user_id) and await db.get_user_rank(chat_id, user_id) < 1:
+        await message.reply("❌ Только администраторы и модераторы могут обучать бота.")
         return
 
     text = await _resolve_target_text(message)
@@ -419,6 +417,24 @@ async def cmd_clear(message: Message):
     await message.answer("🧹 Бот может удалять только свои сообщения. Используйте !пург для массовой очистки.")
 
 
+@router.message(F.chat.type == "private", F.text)
+async def private_message_handler(message: Message):
+    if message.from_user is None or not message.text:
+        return
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    text = message.text.strip()
+
+    settings = await db.get_settings(chat_id)
+
+    for hook in get_hooks():
+        try:
+            if await hook(message, chat_id, user_id, text, settings):
+                return
+        except Exception as e:
+            logger.warning(f"Plugin hook error (PM): {e}")
+
+
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text | F.caption)
 async def message_handler(message: Message):
     if message.from_user is None:
@@ -491,6 +507,8 @@ async def file_no_caption_handler(message: Message):
 
     await cache_user_from_message(message)
 
+    await db.track_message(chat_id, user_id)
+
     settings = await db.get_settings(chat_id)
 
     for hook in get_hooks():
@@ -500,84 +518,58 @@ async def file_no_caption_handler(message: Message):
         except Exception as e:
             logger.warning(f"Plugin hook error: {e}")
 
-    await db.track_message(chat_id, user_id)
-
-    if await is_admin(chat_id, user_id):
-        return
-
-    is_premium_group = await db.is_premium_group(chat_id)
-    if not is_premium_group:
-        return
-
     if await is_whitelisted(chat_id, user_id, settings):
         return
 
-    if not settings.get("virus_total_enabled", False):
-        return
-
-    file_id = None
-    file_name = ""
-    if message.document:
-        file_id = message.document.file_id
-        file_name = message.document.file_name or ""
-    elif message.photo:
-        file_id = message.photo[-1].file_id
-        file_name = "photo.jpg"
-    elif message.video:
-        file_id = message.video.file_id
-        file_name = message.video.file_name or "video.mp4"
-    elif message.audio:
-        file_id = message.audio.file_id
-        file_name = message.audio.file_name or "audio.mp3"
-    elif message.voice:
-        file_id = message.voice.file_id
-        file_name = "voice.ogg"
-
-    if not file_id:
-        return
-
-    _, ext = os.path.splitext(file_name)
-    if ext.lower() not in SCANNABLE_EXTENSIONS:
-        return
-
-    file_obj = await bot.get_file(file_id)
-    if not file_obj.file_path:
-        return
-
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-            tmp_path = tmp.name
-        await bot.download_file(file_obj.file_path, destination=tmp_path)
-        stats = await check_file_safety(tmp_path, file_name)
-        if stats and stats.get("error") != "too_large":
-            if (stats.get("malicious", 0) + stats.get("suspicious", 0)) >= 1:
-                await message.delete()
-                await db.add_log(chat_id, user_id, "virus_total", f"Malicious file: {file_name}")
-                await message.answer(
-                    f"🛡️ {esc(message.from_user.first_name)}, ваш файл удален "
-                    f"(обнаружена вредоносная нагрузка)"
-                )
-    except Exception as e:
-        logger.warning(f"File VT scan error: {e}")
-    finally:
-        if tmp_path:
-            try:
-                if os.path.exists(tmp_path):
-                    os.unlink(tmp_path)
-            except Exception:
-                pass
-
-    settings = await db.get_settings(chat_id)
-    await db.track_message(chat_id, user_id)
-
-    if await is_admin(chat_id, user_id):
-        return
-
     is_premium_group = await db.is_premium_group(chat_id)
 
-    if is_premium_group and await is_whitelisted(chat_id, user_id, settings):
-        return
+    if is_premium_group and settings.get("virus_total_enabled", False):
+        file_id = None
+        file_name = ""
+        if message.document:
+            file_id = message.document.file_id
+            file_name = message.document.file_name or ""
+        elif message.photo:
+            file_id = message.photo[-1].file_id
+            file_name = "photo.jpg"
+        elif message.video:
+            file_id = message.video.file_id
+            file_name = message.video.file_name or "video.mp4"
+        elif message.audio:
+            file_id = message.audio.file_id
+            file_name = message.audio.file_name or "audio.mp3"
+        elif message.voice:
+            file_id = message.voice.file_id
+            file_name = "voice.ogg"
+
+        if file_id:
+            _, ext = os.path.splitext(file_name)
+            if ext.lower() in SCANNABLE_EXTENSIONS:
+                file_obj = await bot.get_file(file_id)
+                if file_obj.file_path:
+                    tmp_path = None
+                    try:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                            tmp_path = tmp.name
+                        await bot.download_file(file_obj.file_path, destination=tmp_path)
+                        stats = await check_file_safety(tmp_path, file_name)
+                        if stats and stats.get("error") != "too_large":
+                            if (stats.get("malicious", 0) + stats.get("suspicious", 0)) >= 1:
+                                await message.delete()
+                                await db.add_log(chat_id, user_id, "virus_total", f"Malicious file: {file_name}")
+                                await message.answer(
+                                    f"🛡️ {esc(message.from_user.first_name)}, ваш файл удален "
+                                    f"(обнаружена вредоносная нагрузка)"
+                                )
+                    except Exception as e:
+                        logger.warning(f"File VT scan error: {e}")
+                    finally:
+                        if tmp_path:
+                            try:
+                                if os.path.exists(tmp_path):
+                                    os.unlink(tmp_path)
+                            except Exception:
+                                pass
 
     if settings.get("captcha", {}).get("enabled", True):
         async with aiosqlite.connect(db.db_path) as conn:
@@ -690,12 +682,15 @@ async def file_no_caption_handler(message: Message):
             pass
         return
 
-    async def handle_link_violation(link_type: str):
+    async def handle_link_violation(link_type: str, ban_on_sight: bool = False):
         action = settings.get("filter_links", {}).get("action", "delete")
         try:
             await message.delete()
             await db.add_log(chat_id, user_id, "delete", link_type)
-            if action == "warn":
+            if ban_on_sight:
+                await ban_user(chat_id, user_id, link_type)
+                logger.info(f"Auto-ban for {link_type} by {user_id} in {chat_id}")
+            elif action == "warn":
                 await warn_and_check(chat_id, user_id, link_type, settings)
             elif action == "mute":
                 await mute_user(chat_id, user_id, 15, link_type)
@@ -714,6 +709,8 @@ async def file_no_caption_handler(message: Message):
             pass
 
     all_urls = extract_all_urls(message)
+
+    is_premium_group = await db.is_premium_group(chat_id)
     if all_urls and settings.get("virus_total_enabled", False) and is_premium_group:
         from utils.virustotal import check_url_safety
         for url in all_urls:
@@ -730,9 +727,20 @@ async def file_no_caption_handler(message: Message):
                     pass
                 return
 
-    if settings.get("invite_block", True) and any(has_invite_link(u) for u in all_urls):
-        await handle_link_violation("Инвайт-ссылка")
+    if all_urls and is_short_ad_message(text):
+        for url in all_urls:
+            ad_attack = await check_url_frequency(url, chat_id, user_id)
+            if ad_attack:
+                await handle_link_violation("Рекламная атака (одинаковые ссылки)", ban_on_sight=True)
+                return
+        await handle_link_violation("Реклама")
         return
+
+    if settings.get("invite_block", True):
+        for u in all_urls:
+            if has_invite_link(u) or has_invite_wide(u):
+                await handle_link_violation("Инвайт-ссылка")
+                return
 
     if settings.get("filter_links", {}).get("enabled", True) and all_urls:
         await handle_link_violation("Внешняя ссылка")

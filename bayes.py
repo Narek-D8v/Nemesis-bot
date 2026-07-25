@@ -4,6 +4,34 @@ import aiosqlite
 
 from typing import Tuple, Dict, List
 
+SEED_SPAM = [
+    "купи дешево скидка акция распродажа",
+    "заработок в интернете без вложений",
+    "перейди по ссылке получи бонус",
+    "офигенный курс научись зарабатывать",
+    "ломбокрипт скам развод",
+    "оформи карту получи деньги прямо сейчас",
+    "только сегодня супер предложение",
+    "заработок тысяч рублей в день",
+    "приглашаю в команду пассивный доход",
+    "крипта криптовалюта майнинг доход",
+    "быстрые деньги займ онлайн без отказа",
+    "переходи в канал подпишись",
+]
+
+SEED_HAM = [
+    "привет как дела что нового",
+    "спасибо большое за помощь",
+    "понятно хорошо договорились",
+    "доброе утро всем хорошего дня",
+    "кто пойдет сегодня на пары",
+    "завтра встречаемся в шесть",
+    "скинь пожалуйста домашнее задание",
+    "спасибо за ответ разобрался",
+    "респект и уважение бро",
+    "лады бывай до завтра",
+]
+
 
 class BayesClassifier:
     def __init__(self, db_path: str, model_name: str = 'default'):
@@ -11,6 +39,25 @@ class BayesClassifier:
         self.model_name = model_name
         self.spam_total = 0
         self.ham_total = 0
+        self._seeded = False
+
+    async def _ensure_seeded(self):
+        if self._seeded:
+            return
+        self._seeded = True
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM bayes_counts WHERE model_name = ?",
+                (self.model_name,)
+            )
+            row = await cursor.fetchone()
+            if row and row[0] > 0:
+                return
+        await self._ensure_counts_row()
+        for text in SEED_SPAM:
+            await self.train(text, is_spam=True)
+        for text in SEED_HAM:
+            await self.train(text, is_spam=False)
 
     async def _load_counts(self):
         async with aiosqlite.connect(self.db_path) as conn:
@@ -51,10 +98,7 @@ class BayesClassifier:
 
     def _normalize_word(self, word: str) -> str:
         word = word.lower()
-        word = re.sub(r'https?://\S+', '[URL]', word)
-        word = re.sub(r'@\w+', '[MENTION]', word)
-        word = re.sub(r't\.me/\S+', '[INVITE]', word)
-        cleaned = re.sub(r'[^a-zа-я0-9\U0001F300-\U0010FFFF]', '', word)
+        cleaned = re.sub(r'[^a-zа-я0-9]', '', word)
         return cleaned
 
     def _tokenize(self, text: str) -> List[str]:
@@ -65,7 +109,7 @@ class BayesClassifier:
         result = []
         for w in words:
             cleaned = self._normalize_word(w)
-            if cleaned:
+            if cleaned and len(cleaned) > 1:
                 result.append(cleaned)
         return result
 
@@ -93,31 +137,8 @@ class BayesClassifier:
                 )
             await conn.commit()
 
-    async def train_bulk(self, texts: List[str], is_spam: bool):
-        for text in texts:
-            await self.train(text, is_spam)
-
-    async def get_word_probability(self, word: str) -> Tuple[float, float]:
-        cleaned = self._normalize_word(word)
-        if not cleaned:
-            return 0.5, 0.5
-        async with aiosqlite.connect(self.db_path) as conn:
-            cursor = await conn.execute(
-                "SELECT spam_count, ham_count FROM bayes_stats WHERE model_name = ? AND word = ?",
-                (self.model_name, cleaned)
-            )
-            row = await cursor.fetchone()
-        if row:
-            spam_count, ham_count = row
-        else:
-            spam_count, ham_count = 0, 0
-
-        alpha = 1
-        spam_prob = (spam_count + alpha) / (self.spam_total + alpha * 2) if self.spam_total > 0 else 0.5
-        ham_prob = (ham_count + alpha) / (self.ham_total + alpha * 2) if self.ham_total > 0 else 0.5
-        return spam_prob, ham_prob
-
     async def classify(self, text: str) -> Tuple[bool, float]:
+        await self._ensure_seeded()
         await self._load_counts()
         tokens = self._tokenize(text)
         if not tokens:
@@ -138,7 +159,6 @@ class BayesClassifier:
             word_data = {row[0]: (row[1], row[2]) for row in await cursor.fetchall()}
 
         alpha = 1.0
-        vocab_size = len(word_data) if word_data else 1
 
         log_spam = math.log(self.spam_total / total)
         log_ham = math.log(self.ham_total / total)
@@ -155,18 +175,17 @@ class BayesClassifier:
             log_spam += math.log(p_spam)
             log_ham += math.log(p_ham)
 
-        try:
-            spam_prob_val = math.exp(log_spam)
-            ham_prob_val = math.exp(log_ham)
-            total_prob = spam_prob_val + ham_prob_val
-            if total_prob == 0:
-                return False, 0.0
-            confidence = spam_prob_val / total_prob
-            return confidence > 0.5, confidence
-        except OverflowError:
-            if log_spam > log_ham:
-                return True, 1.0
+        max_log = max(log_spam, log_ham)
+        log_spam_shifted = log_spam - max_log
+        log_ham_shifted = log_ham - max_log
+
+        spam_prob_val = math.exp(log_spam_shifted)
+        ham_prob_val = math.exp(log_ham_shifted)
+        total_prob = spam_prob_val + ham_prob_val
+        if total_prob == 0:
             return False, 0.0
+        confidence = spam_prob_val / total_prob
+        return confidence > 0.5, confidence
 
     async def get_stats(self) -> Dict:
         await self._load_counts()

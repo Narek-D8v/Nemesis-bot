@@ -66,7 +66,7 @@ async def menu_callback(callback: CallbackQuery):
         await safe_edit(callback, 
             "⚙️ <b>Настройки</b>\n\n"
             "Дополнительные настройки модерации:",
-            reply_markup=settings_menu(settings)
+            reply_markup=await settings_menu(settings, chat_id)
         )
 
     elif action == "premium":

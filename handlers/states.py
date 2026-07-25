@@ -13,3 +13,4 @@ class SettingsStates(StatesGroup):
     waiting_night_start = State()
     waiting_night_end = State()
     waiting_night_action = State()
+    waiting_antispam_threshold = State()

@@ -88,8 +88,6 @@ async def gift_premium(message: Message):
         logger.warning(f"Could not notify user {target.id} about premium gift: {e}")
 
 
-RANK_NAMES = {0: "Участник", 1: "Мл.Модер", 2: "Ст.Модер", 3: "Мл.Админ", 4: "Ст.Админ", 5: "Создатель"}
-
 _notified_owners: set[int] = set()
 
 

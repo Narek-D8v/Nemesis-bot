@@ -20,7 +20,7 @@ router = Router()
 
 
 @router.callback_query(lambda c: c.data.startswith("a:"))
-async def antispam_callback(callback: CallbackQuery):
+async def antispam_callback(callback: CallbackQuery, state: FSMContext):
     parts = callback.data.split(":")
     action = parts[1]
     chat_id = callback.message.chat.id
@@ -50,7 +50,8 @@ async def antispam_callback(callback: CallbackQuery):
         except (ValueError, IndexError):
             await callback.answer("❌ Некорректное значение", show_alert=True)
             return
-        if threshold not in (0, 3, 5, 10, 15):
+        valid_presets = (0, 10, 20, 30, 40, 50, 60)
+        if threshold not in valid_presets:
             await callback.answer("❌ Недопустимый порог", show_alert=True)
             return
         settings["antispam"]["threshold"] = threshold
@@ -61,6 +62,13 @@ async def antispam_callback(callback: CallbackQuery):
         await safe_edit(callback, 
             "🔐 Настройка защиты", reply_markup=protection_menu(settings)
         )
+    elif action == "custom":
+        _pending_edits[user_id] = {"type": "antispam_threshold", "chat_id": chat_id}
+        await safe_edit(callback,
+            "✏️ Введите желаемый порог сообщений в минуту (число, например 25):"
+        )
+        await state.set_state(SettingsStates.waiting_antispam_threshold)
+        return
     await callback.answer()
 
 
@@ -195,7 +203,12 @@ async def settings_callbacks(callback: CallbackQuery):
         "clear": ("clear_chat_enabled",),
         "commands": ("block_bot_commands",),
         "count_cmds": ("count_commands_as_spam",),
+        "aichat": ("aichat_enabled",),
     }
+
+    if action == "aichat_locked":
+        await callback.answer("🔒 ИИ чат доступен только с премиумом", show_alert=True)
+        return
 
     if action in toggles:
         keys = toggles[action]
@@ -209,7 +222,7 @@ async def settings_callbacks(callback: CallbackQuery):
                 await callback.answer("✅ Возрастная проверка включена (3 дня)")
             await db.save_settings(chat_id, settings)
             await safe_edit(callback, 
-                "⚙️ Настройки", reply_markup=settings_menu(settings)
+                "⚙️ Настройки", reply_markup=await settings_menu(settings, chat_id)
             )
             return
         if keys:
@@ -218,7 +231,7 @@ async def settings_callbacks(callback: CallbackQuery):
             await db.save_settings(chat_id, settings)
             await callback.answer(f"{'Включено' if settings[key] else 'Выключено'}")
         await safe_edit(callback, 
-            "⚙️ Настройки", reply_markup=settings_menu(settings)
+            "⚙️ Настройки", reply_markup=await settings_menu(settings, chat_id)
         )
         return
 
@@ -242,7 +255,11 @@ async def settings_callbacks(callback: CallbackQuery):
         await db.save_settings(chat_id, settings)
         await callback.answer(f"После {count} предупреждений — мут")
     elif action.startswith("extra_"):
-        extra_idx = int(action.split("_")[1])
+        try:
+            extra_idx = int(action.split("_")[1])
+        except (ValueError, IndexError):
+            await callback.answer()
+            return
         extra_toggles = [
             "captcha_for_suspicious",
             "duplicate_block",
@@ -264,7 +281,7 @@ async def settings_callbacks(callback: CallbackQuery):
         return
 
     await safe_edit(callback, 
-        "⚙️ Настройки", reply_markup=settings_menu(settings)
+        "⚙️ Настройки", reply_markup=await settings_menu(settings, chat_id)
     )
 
 
@@ -287,7 +304,20 @@ async def stats_callbacks(callback: CallbackQuery):
         await db.save_settings(chat_id, settings)
         await callback.answer(f"Период: {periods[idx]}")
     elif action == "refresh":
-        pass
+        stats = await db.get_stats(chat_id, settings.get("stats_period", "week"))
+        period_label = {"day": "день", "week": "неделю", "month": "месяц"}.get(
+            settings.get("stats_period", "week"), "неделю"
+        )
+        text = (
+            f"📊 <b>Статистика за {period_label}</b>\n\n"
+            f"⛔ Банов: {stats['bans']}\n"
+            f"🔇 Мутов: {stats['mutes']}\n"
+            f"🗑 Удалено: {stats['deletes']}\n"
+            f"⚠️ Предупреждений: {stats['warns']}\n"
+        )
+        await safe_edit(callback, text, reply_markup=stats_menu(settings, is_premium))
+        await callback.answer("Статистика обновлена")
+        return
     elif action == "top":
         if not is_premium:
             await callback.answer("❌ Только для премиум-групп", show_alert=True)

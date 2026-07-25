@@ -15,7 +15,7 @@ from .common import check_rank, get_min_rank, get_reason, call_plugin_hooks
 router = Router()
 
 
-@router.message(F.chat.type.in_({"group", "supergroup"}), F.text, lambda msg: msg.text and (re.match(r'^[!]?варн\b', msg.text.strip(), re.IGNORECASE) or msg.text.strip().split()[0].lower() if msg.text.strip().split() else False in ('пред', 'предупреждение')))
+@router.message(F.chat.type.in_({"group", "supergroup"}), F.text, lambda msg: msg.text and (re.match(r'^[!]?варн\b', msg.text.strip(), re.IGNORECASE) or (msg.text.strip().split()[0].lower() if msg.text.strip().split() else '') in ('пред', 'предупреждение')))
 async def warn_handler(message: Message):
     if await call_plugin_hooks(message):
         return

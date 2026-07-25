@@ -12,6 +12,7 @@ from utils.time_parser import parse_time
 from utils.mentions import extract_user
 from utils.chat_utils import delete_messages, get_messages_above, get_messages_below, kick_user
 from utils.user_name import resolve_name
+from handlers.admin.common import check_rank, get_min_rank
 
 router = Router()
 
@@ -37,17 +38,6 @@ def is_cleanup_cmd(text: str) -> bool:
 def get_reason(text: str) -> str:
     parts = text.split('\n', 1)
     return parts[1].strip() if len(parts) > 1 else ""
-
-
-async def check_rank(chat_id: int, user_id: int, required_rank: int) -> bool:
-    if required_rank == 0:
-        return True
-    rank = await db.get_user_rank(chat_id, user_id)
-    return rank >= required_rank
-
-
-async def get_min_rank(chat_id: int, cmd_type: str) -> int:
-    return await db.get_command_restriction(chat_id, cmd_type)
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text, lambda msg: is_cleanup_cmd(msg.text))
@@ -133,7 +123,7 @@ async def cleanup_handler(message: Message):
         return
 
     # ---- KICK COMMANDS ----
-    if re.match(r'^кик\b', text, re.IGNORECASE) or first_word == 'кик':
+    if re.match(r'^кик\b', text, re.IGNORECASE):
         rest = text[3:].strip() if text.lower().startswith('кик') else ""
         rest_lower = rest.lower()
 

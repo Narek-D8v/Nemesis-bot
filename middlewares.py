@@ -14,6 +14,7 @@ from utils import is_night_mode, esc
 
 _init_lock = asyncio.Lock()
 _init_cache: set = set()
+_INIT_CACHE_MAX = 10000
 
 
 class ChatInitMiddleware(BaseMiddleware):
@@ -51,6 +52,10 @@ class ChatInitMiddleware(BaseMiddleware):
                 logger.warning(f"ChatInitMiddleware ensure_rank: {e}")
 
             _init_cache.add(chat_id)
+
+            if len(_init_cache) > _INIT_CACHE_MAX:
+                _init_cache.clear()
+                logger.info("ChatInitMiddleware: _init_cache cleared (size limit reached)")
 
         return await handler(event, data)
 

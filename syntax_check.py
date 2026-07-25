@@ -1,30 +1,18 @@
 import py_compile
 import sys
-
-files = [
-    "utils/chat_utils.py",
-    "db.py",
-    "handlers/admin/__init__.py",
-    "handlers/admin/common.py",
-    "handlers/admin/ranks.py",
-    "handlers/admin/warns.py",
-    "handlers/admin/punish.py",
-    "handlers/admin/misc.py",
-    "handlers/callbacks/__init__.py",
-    "handlers/callbacks/settings.py",
-    "handlers/callbacks/admin.py",
-    "handlers/callbacks/common.py",
-    "handlers/easter_egg.py",
-    "handlers/messages.py",
-]
+import os
 
 all_ok = True
-for f in files:
-    try:
-        py_compile.compile(f, doraise=True)
-        print(f"OK: {f}")
-    except py_compile.PyCompileError as e:
-        print(f"FAIL: {f}: {e}")
-        all_ok = False
+for root, dirs, files in os.walk("."):
+    dirs[:] = [d for d in dirs if d != "__pycache__"]
+    for f in files:
+        if f.endswith(".py") and f != "syntax_check.py":
+            path = os.path.join(root, f)
+            try:
+                py_compile.compile(path, doraise=True)
+                print(f"OK: {path}")
+            except py_compile.PyCompileError as e:
+                print(f"FAIL: {path}: {e}")
+                all_ok = False
 
 sys.exit(0 if all_ok else 1)
