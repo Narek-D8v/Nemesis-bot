@@ -1,0 +1,8 @@
+# YouTube cookies (формат Netscape)
+#
+# Установите расширение "Get cookies.txt" (Chrome) или "cookies.txt" (Firefox)
+# Зайдите на youtube.com, экспортируйте cookies и вставьте сюда
+# Без этого YouTube не даст скачивать с серверных IP
+#
+# Пример строки (раскомментируйте и замените своими данными):
+# .youtube.com	TRUE	/	TRUE	0	SESSION_TOKEN	abc123
