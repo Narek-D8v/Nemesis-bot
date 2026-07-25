@@ -325,6 +325,10 @@ class Database:
                 for key, val in DEFAULT_SETTINGS.items():
                     if key not in settings:
                         settings[key] = val
+                    elif isinstance(val, dict) and isinstance(settings[key], dict):
+                        for sub_key, sub_val in val.items():
+                            if sub_key not in settings[key]:
+                                settings[key][sub_key] = sub_val
                 return copy.deepcopy(settings)
             return copy.deepcopy(DEFAULT_SETTINGS)
 
