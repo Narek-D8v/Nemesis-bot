@@ -102,7 +102,7 @@ def _fmt_text(text: str) -> str:
             out.append(line)
     if in_block:
         out.append("</blockquote>")
-    return "<br>".join(out)
+    return "\n".join(out)
 
 
 async def handle_group_command(
