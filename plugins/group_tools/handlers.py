@@ -4,7 +4,7 @@ import time
 
 import aiosqlite
 from aiogram.types import Message, ChatPermissions, ChatMemberUpdated
-from aiogram.enums import ChatMemberStatus
+from aiogram.enums import ChatMemberStatus, MessageEntityType
 
 from bot import bot, logger
 from db import db
@@ -84,8 +84,49 @@ async def is_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 
-def _fmt_text(text: str) -> str:
-    return text
+def _entities_to_html(text: str, entities_with_offset: list) -> str:
+    if not entities_with_offset:
+        return text.replace("&", "&amp;").replace("<", "&lt;")
+
+    tag_map = {
+        MessageEntityType.BOLD: ("<b>", "</b>"),
+        MessageEntityType.ITALIC: ("<i>", "</i>"),
+        MessageEntityType.UNDERLINE: ("<u>", "</u>"),
+        MessageEntityType.STRIKETHROUGH: ("<s>", "</s>"),
+        MessageEntityType.CODE: ("<code>", "</code>"),
+        MessageEntityType.PRE: ("<pre>", "</pre>"),
+        MessageEntityType.SPOILER: ("<tg-spoiler>", "</tg-spoiler>"),
+        MessageEntityType.BLOCKQUOTE: ("<blockquote>", "</blockquote>"),
+        MessageEntityType.EXPANDABLE_BLOCKQUOTE: ("<blockquote expandable>", "</blockquote>"),
+    }
+
+    events = []
+    for i, (entity, adj_offset) in enumerate(entities_with_offset):
+        if entity.type in tag_map:
+            t = tag_map[entity.type]
+            events.append((adj_offset, False, t[0], t[1], entity.length, i))
+            events.append((adj_offset + entity.length, True, t[0], t[1], entity.length, i))
+        elif entity.type == MessageEntityType.TEXT_LINK and entity.url:
+            events.append((adj_offset, False, f'<a href="{entity.url}">', "</a>", entity.length, i))
+            events.append((adj_offset + entity.length, True, f'<a href="{entity.url}">', "</a>", entity.length, i))
+        elif entity.type == MessageEntityType.TEXT_MENTION and entity.user:
+            events.append((adj_offset, False, f'<a href="tg://user?id={entity.user.id}">', "</a>", entity.length, i))
+            events.append((adj_offset + entity.length, True, f'<a href="tg://user?id={entity.user.id}">', "</a>", entity.length, i))
+
+    events.sort(key=lambda x: (x[0], 0 if x[1] else 1, -x[4] if not x[1] else x[4], -x[5] if x[1] else x[5]))
+
+    result = []
+    pos = 0
+    for epos, is_close, tag_open, tag_close, _, _ in events:
+        if epos > pos:
+            result.append(text[pos:epos].replace("&", "&amp;").replace("<", "&lt;"))
+            pos = epos
+        result.append(tag_close if is_close else tag_open)
+
+    if pos < len(text):
+        result.append(text[pos:].replace("&", "&amp;").replace("<", "&lt;"))
+
+    return "".join(result)
 
 
 async def handle_group_command(
@@ -146,16 +187,26 @@ async def handle_group_command(
 async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str):
     cmd = text.strip()
     if cmd.startswith("+Правила") or cmd.startswith("+правила"):
-        rules_text = cmd[len("+правила"):].strip() if cmd.startswith("+правила") else cmd[len("+Правила"):].strip()
-        if rules_text.startswith("\n"):
-            rules_text = rules_text[1:]
+        lower_idx = text.lower().find("+правила")
+        if lower_idx == -1:
+            await message.reply("❌ Ошибка парсинга.")
+            return
+        after_cmd = text[lower_idx + 8:]
+        rules_text = after_cmd.lstrip()
         if not rules_text:
             await message.reply("❌ Укажите текст правил после команды.")
             return
+        content_start = lower_idx + 8 + (len(after_cmd) - len(rules_text))
+        entities = message.entities or message.caption_entities or []
+        adjusted = []
+        for e in entities:
+            if e.offset >= content_start and e.offset + e.length <= content_start + len(rules_text):
+                adjusted.append((e, e.offset - content_start))
+        rules_html = _entities_to_html(rules_text, adjusted)
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
                 "INSERT OR REPLACE INTO group_rules (chat_id, text) VALUES (?, ?)",
-                (chat_id, rules_text)
+                (chat_id, rules_html)
             )
             await conn.commit()
         await message.reply("✅ Правила установлены!")
@@ -175,35 +226,44 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
             )
             row = await cursor.fetchone()
         if row and row[0]:
-            await message.reply(f"📜 Правила чата:\n\n{row[0]}", parse_mode=None)
+            await message.reply(f"📜 Правила чата:\n\n{row[0]}")
         else:
             await message.reply("📜 Правила не установлены.")
 
 
 async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: str):
     cmd_text = text.strip()
+    settings = await db.get_settings(chat_id)
     if cmd_text.startswith("+Приветствие") or cmd_text.startswith("+приветствие"):
-        greeting_text = cmd_text[len("+приветствие"):].strip() if cmd_text.startswith("+приветствие") else cmd_text[len("+Приветствие"):].strip()
-        if greeting_text.startswith("\n"):
-            greeting_text = greeting_text[1:]
+        lower_idx = text.lower().find("+приветствие")
+        if lower_idx == -1:
+            await message.reply("❌ Ошибка парсинга.")
+            return
+        after_cmd = text[lower_idx + 12:]  # 12 = len("+приветствие")
+        greeting_text = after_cmd.lstrip()
         if not greeting_text:
             await message.reply("❌ Укажите текст приветствия после команды.")
             return
-        settings = await db.get_settings(chat_id)
-        settings.setdefault("greeting", {})["text"] = greeting_text
+        content_start = lower_idx + 12 + (len(after_cmd) - len(greeting_text))
+        entities = message.entities or message.caption_entities or []
+        adjusted = []
+        for e in entities:
+            if e.offset >= content_start and e.offset + e.length <= content_start + len(greeting_text):
+                adjusted.append((e, e.offset - content_start))
+        greeting_html = _entities_to_html(greeting_text, adjusted)
+        settings.setdefault("greeting", {})["text"] = greeting_html
         settings["greeting"]["enabled"] = True
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Приветствие установлено!")
         logger.info(f"Greeting set in {chat_id} by {user_id}")
     elif cmd_text.startswith("-Приветствие") or cmd_text.startswith("-приветствие"):
-        settings = await db.get_settings(chat_id)
         settings["greeting"]["enabled"] = False
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Приветствие выключено.")
     else:
         g = settings.get("greeting", {})
         if g.get("text"):
-            await message.reply(f"👋 Текущее приветствие:\n{g['text']}", parse_mode=None)
+            await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
         else:
             await message.reply("👋 Приветствие не установлено.")
 
