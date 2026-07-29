@@ -15,18 +15,6 @@ logger = logging.getLogger(__name__)
 TOOLS_ROUTER = Router()
 
 
-@TOOLS_ROUTER.message(F.chat.type.in_({"group", "supergroup"}), F.text)
-async def tools_direct_handler(message: Message):
-    text = message.text.strip()
-    if not text.startswith(("+", "-", "!")):
-        return
-    from .handlers import handle_group_command
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-    settings = await db.get_settings(chat_id)
-    await handle_group_command(message, chat_id, user_id, text, settings)
-
-
 @TOOLS_ROUTER.chat_member(ChatMemberUpdatedFilter(JOIN_TRANSITION))
 async def on_user_join(event: ChatMemberUpdated):
     from .handlers import on_user_join as _join
