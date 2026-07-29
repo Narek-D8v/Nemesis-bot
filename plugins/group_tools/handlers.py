@@ -84,7 +84,7 @@ def _adjust_entities_json(message: Message, content: str, content_start: int) ->
     for e in entities:
         if e.offset >= content_start and e.offset + e.length <= end_bound:
             d = {
-                "type": e.type.value,
+                "type": str(e.type),
                 "offset": e.offset - content_start,
                 "length": e.length,
             }
