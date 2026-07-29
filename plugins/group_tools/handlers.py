@@ -1,79 +1,58 @@
 import asyncio
+import html
 import re
 import time
 
 import aiosqlite
-from aiogram.types import Message, ChatPermissions, ChatMemberUpdated
+from aiogram.types import Message, ChatPermissions, ChatJoinRequest
 from aiogram.enums import ChatMemberStatus, MessageEntityType
 
 from bot import bot, logger
 from db import db
 from utils import esc
-from utils.mentions import extract_user, cache_user_from_member
+from utils.mentions import extract_user
 
 JOIN_LEAVE_RE = re.compile(
-    r'^[+-]?(входы|выходы|входы-выходы|входывыходы)\b',
-    re.IGNORECASE
+    r'^[+-]?(входы|выходы|входы-выходы|входывыходы)\b', re.IGNORECASE
 )
-AUTOKICK_RE = re.compile(
-    r'^[+-]?автокик\b',
-    re.IGNORECASE
-)
+AUTOKICK_RE = re.compile(r'^[+-]?автокик\b', re.IGNORECASE)
 AUTOKICK_SILENT_RE = re.compile(
-    r'^[+-]?автокик\s+молчунов\b',
-    re.IGNORECASE
+    r'^[+-]?автокик\s+молчунов\b', re.IGNORECASE
 )
-CHAT_TOGGLE_RE = re.compile(
-    r'^[+-]?чат\b',
-    re.IGNORECASE
-)
-TOPIC_TOGGLE_RE = re.compile(
-    r'^[+-]?топик\b',
-    re.IGNORECASE
-)
-TGADMIN_RE = re.compile(
-    r'^[+-]?тг\s+админ\b',
-    re.IGNORECASE
-)
-TGRIGHTS_RE = re.compile(
-    r'^тг\s+права\b',
-    re.IGNORECASE
-)
-TAG_RE = re.compile(
-    r'^[+-]?тг\s+тег\b',
-    re.IGNORECASE
-)
-CHANNELS_RE = re.compile(
-    r'^[+-]?каналы\b',
-    re.IGNORECASE
-)
-MINREG_RE = re.compile(
-    r'^[+-]?минрег\b',
-    re.IGNORECASE
-)
-AUTOJOIN_RE = re.compile(
-    r'^[+-]?автозаявки\b',
-    re.IGNORECASE
-)
-RULES_RE = re.compile(
-    r'^[+-]?правила\b',
-    re.IGNORECASE
-)
-GREETING_RE = re.compile(
-    r'^[+-]?приветствие\b',
-    re.IGNORECASE
-)
-CHECK_CHAT_RE = re.compile(
-    r'^проверить\s+в\s+чате\b',
-    re.IGNORECASE
-)
+CHAT_TOGGLE_RE = re.compile(r'^[+-]?чат\b', re.IGNORECASE)
+TOPIC_TOGGLE_RE = re.compile(r'^[+-]?топик\b', re.IGNORECASE)
+TGADMIN_RE = re.compile(r'^[+-]?тг\s+админ\b', re.IGNORECASE)
+TGRIGHTS_RE = re.compile(r'^тг\s+права\b', re.IGNORECASE)
+TAG_RE = re.compile(r'^[+-]?тг\s+тег\b', re.IGNORECASE)
+CHANNELS_RE = re.compile(r'^[+-]?каналы\b', re.IGNORECASE)
+MINREG_RE = re.compile(r'^[+-]?минрег\b', re.IGNORECASE)
+AUTOJOIN_RE = re.compile(r'^[+-]?автозаявки\b', re.IGNORECASE)
+RULES_RE = re.compile(r'^[+-]?правила\b', re.IGNORECASE)
+GREETING_RE = re.compile(r'^[+-]?приветствие\b', re.IGNORECASE)
+CHECK_CHAT_RE = re.compile(r'^проверить\s+в\s+чате\b', re.IGNORECASE)
 
 ADMIN_CMDS = (
     JOIN_LEAVE_RE, AUTOKICK_RE, AUTOKICK_SILENT_RE,
     CHAT_TOGGLE_RE, TOPIC_TOGGLE_RE, TGADMIN_RE,
     TGRIGHTS_RE, TAG_RE, CHANNELS_RE, MINREG_RE,
-    AUTOJOIN_RE, RULES_RE, GREETING_RE,
+    AUTOJOIN_RE, RULES_RE, GREETING_RE, CHECK_CHAT_RE,
 )
+
+PERMS_ALLOW = ChatPermissions(
+    can_send_messages=True, can_send_media_messages=True,
+    can_send_polls=True, can_send_other_messages=True,
+    can_add_web_page_previews=True, can_change_info=False,
+    can_invite_users=True, can_pin_messages=False,
+)
+
+PERMS_DENY = ChatPermissions(
+    can_send_messages=False, can_send_media_messages=False,
+    can_send_polls=False, can_send_other_messages=False,
+    can_add_web_page_previews=False, can_change_info=False,
+    can_invite_users=False, can_pin_messages=False,
+)
+
+USER_REQUIRED_MSG = "❌ Укажите пользователя (ссылка, @username или ответ)"
 
 
 async def is_admin(chat_id: int, user_id: int) -> bool:
@@ -84,9 +63,18 @@ async def is_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 
+def _sort_key(event):
+    offset, is_close, _, _, length, idx = event
+    return (
+        offset, 0 if is_close else 1,
+        -length if not is_close else length,
+        -idx if is_close else idx,
+    )
+
+
 def _entities_to_html(text: str, entities_with_offset: list) -> str:
     if not entities_with_offset:
-        return text.replace("&", "&amp;").replace("<", "&lt;")
+        return html.escape(text)
 
     tag_map = {
         MessageEntityType.BOLD: ("<b>", "</b>"),
@@ -98,35 +86,79 @@ def _entities_to_html(text: str, entities_with_offset: list) -> str:
         MessageEntityType.SPOILER: ("<tg-spoiler>", "</tg-spoiler>"),
         MessageEntityType.BLOCKQUOTE: ("<blockquote>", "</blockquote>"),
         MessageEntityType.EXPANDABLE_BLOCKQUOTE: ("<blockquote expandable>", "</blockquote>"),
+        MessageEntityType.CUSTOM_EMOJI: ("<tg-emoji emoji-id=\"\">", "</tg-emoji>"),
     }
 
     events = []
     for i, (entity, adj_offset) in enumerate(entities_with_offset):
         if entity.type in tag_map:
             t = tag_map[entity.type]
-            events.append((adj_offset, False, t[0], t[1], entity.length, i))
-            events.append((adj_offset + entity.length, True, t[0], t[1], entity.length, i))
+            if entity.type == MessageEntityType.CUSTOM_EMOJI and hasattr(entity, "custom_emoji_id"):
+                open_tag = f'<tg-emoji emoji-id="{entity.custom_emoji_id}">'
+            else:
+                open_tag = t[0]
+            events.append((adj_offset, False, open_tag, t[1], entity.length, i))
+            events.append((adj_offset + entity.length, True, open_tag, t[1], entity.length, i))
         elif entity.type == MessageEntityType.TEXT_LINK and entity.url:
-            events.append((adj_offset, False, f'<a href="{entity.url}">', "</a>", entity.length, i))
-            events.append((adj_offset + entity.length, True, f'<a href="{entity.url}">', "</a>", entity.length, i))
+            safe_url = html.escape(entity.url, quote=True)
+            for off in (adj_offset, adj_offset + entity.length):
+                events.append((
+                    off, off != adj_offset,
+                    f'<a href="{safe_url}">', "</a>", entity.length, i
+                ))
+        elif entity.type == MessageEntityType.URL:
+            url_text = text[adj_offset:adj_offset + entity.length]
+            safe_url = html.escape(url_text, quote=True)
+            for off in (adj_offset, adj_offset + entity.length):
+                events.append((
+                    off, off != adj_offset,
+                    f'<a href="{safe_url}">', "</a>", entity.length, i
+                ))
         elif entity.type == MessageEntityType.TEXT_MENTION and entity.user:
-            events.append((adj_offset, False, f'<a href="tg://user?id={entity.user.id}">', "</a>", entity.length, i))
-            events.append((adj_offset + entity.length, True, f'<a href="tg://user?id={entity.user.id}">', "</a>", entity.length, i))
+            mention_url = f'tg://user?id={entity.user.id}'
+            for off in (adj_offset, adj_offset + entity.length):
+                events.append((
+                    off, off != adj_offset,
+                    f'<a href="{mention_url}">', "</a>", entity.length, i
+                ))
 
-    events.sort(key=lambda x: (x[0], 0 if x[1] else 1, -x[4] if not x[1] else x[4], -x[5] if x[1] else x[5]))
+    events.sort(key=_sort_key)
 
     result = []
     pos = 0
     for epos, is_close, tag_open, tag_close, _, _ in events:
         if epos > pos:
-            result.append(text[pos:epos].replace("&", "&amp;").replace("<", "&lt;"))
+            result.append(html.escape(text[pos:epos]))
             pos = epos
         result.append(tag_close if is_close else tag_open)
 
     if pos < len(text):
-        result.append(text[pos:].replace("&", "&amp;").replace("<", "&lt;"))
+        result.append(html.escape(text[pos:]))
 
     return "".join(result)
+
+
+def _extract_content(text: str, cmd_lower: str) -> tuple[str | None, int | None]:
+    cmd_len = len(cmd_lower)
+    lower_idx = text.lower().find(cmd_lower)
+    if lower_idx == -1:
+        return None, None
+    after = text[lower_idx + cmd_len:]
+    content = after.lstrip()
+    if not content:
+        return None, None
+    content_start = lower_idx + cmd_len + (len(after) - len(content))
+    return content, content_start
+
+
+def _content_to_html(message: Message, content: str, content_start: int) -> str:
+    entities = message.entities or message.caption_entities or []
+    adjusted = []
+    end_bound = content_start + len(content)
+    for e in entities:
+        if e.offset >= content_start and e.offset + e.length <= end_bound:
+            adjusted.append((e, e.offset - content_start))
+    return _entities_to_html(content, adjusted)
 
 
 async def handle_group_command(
@@ -135,74 +167,52 @@ async def handle_group_command(
     stripped = text.strip().lower()
     if not any(pat.match(stripped) for pat in ADMIN_CMDS):
         return False
-
     if not await is_admin(chat_id, user_id):
         return False
 
     if RULES_RE.match(stripped):
         await _handle_rules(message, chat_id, user_id, text)
-        return True
-    if GREETING_RE.match(stripped):
+    elif GREETING_RE.match(stripped):
         await _handle_greeting(message, chat_id, user_id, text)
-        return True
-    if AUTOKICK_SILENT_RE.match(stripped):
+    elif AUTOKICK_SILENT_RE.match(stripped):
         await _handle_autokick_silent(message, chat_id, user_id, text)
-        return True
-    if AUTOKICK_RE.match(stripped):
+    elif AUTOKICK_RE.match(stripped):
         await _handle_autokick(message, chat_id, user_id, text, settings)
-        return True
-    if CHAT_TOGGLE_RE.match(stripped):
+    elif CHAT_TOGGLE_RE.match(stripped):
         await _handle_chat_toggle(message, chat_id, user_id, text)
-        return True
-    if TOPIC_TOGGLE_RE.match(stripped):
+    elif TOPIC_TOGGLE_RE.match(stripped):
         await _handle_topic_toggle(message, chat_id, user_id, text)
-        return True
-    if TGADMIN_RE.match(stripped):
+    elif TGADMIN_RE.match(stripped):
         await _handle_tgadmin(message, chat_id, user_id, text)
-        return True
-    if TGRIGHTS_RE.match(stripped):
+    elif TGRIGHTS_RE.match(stripped):
         await _handle_tgrights(message, chat_id, user_id, text)
-        return True
-    if TAG_RE.match(stripped):
+    elif TAG_RE.match(stripped):
         await _handle_tag(message, chat_id, user_id, text)
-        return True
-    if CHANNELS_RE.match(stripped):
+    elif CHANNELS_RE.match(stripped):
         await _handle_channels(message, chat_id, user_id, text, settings)
-        return True
-    if JOIN_LEAVE_RE.match(stripped):
+    elif JOIN_LEAVE_RE.match(stripped):
         await _handle_join_leave(message, chat_id, user_id, text, settings)
-        return True
-    if MINREG_RE.match(stripped):
+    elif MINREG_RE.match(stripped):
         await _handle_minreg(message, chat_id, user_id, text, settings)
-        return True
-    if AUTOJOIN_RE.match(stripped):
+    elif AUTOJOIN_RE.match(stripped):
         await _handle_autojoin(message, chat_id, user_id, text)
-        return True
-    if CHECK_CHAT_RE.match(stripped):
+    elif CHECK_CHAT_RE.match(stripped):
         await _handle_check_chat(message, chat_id)
-        return True
-    return False
+    return True
 
 
 async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str):
-    cmd = text.strip()
-    if cmd.startswith("+Правила") or cmd.startswith("+правила"):
-        lower_idx = text.lower().find("+правила")
-        if lower_idx == -1:
-            await message.reply("❌ Ошибка парсинга.")
-            return
-        after_cmd = text[lower_idx + 8:]
-        rules_text = after_cmd.lstrip()
-        if not rules_text:
+    stripped = text.strip()
+    is_enable = stripped.startswith("+")
+    is_disable = stripped.startswith("-")
+    if is_enable:
+        content, content_start = _extract_content(text, "+правила")
+        if content is None:
+            content, content_start = _extract_content(text, "правила")
+        if content is None:
             await message.reply("❌ Укажите текст правил после команды.")
             return
-        content_start = lower_idx + 8 + (len(after_cmd) - len(rules_text))
-        entities = message.entities or message.caption_entities or []
-        adjusted = []
-        for e in entities:
-            if e.offset >= content_start and e.offset + e.length <= content_start + len(rules_text):
-                adjusted.append((e, e.offset - content_start))
-        rules_html = _entities_to_html(rules_text, adjusted)
+        rules_html = _content_to_html(message, content, content_start)
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
                 "INSERT OR REPLACE INTO group_rules (chat_id, text) VALUES (?, ?)",
@@ -211,7 +221,7 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
             await conn.commit()
         await message.reply("✅ Правила установлены!")
         logger.info(f"Rules set in {chat_id} by {user_id}")
-    elif cmd.startswith("-Правила") or cmd.startswith("-правила"):
+    elif is_disable:
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
                 "INSERT OR REPLACE INTO group_rules (chat_id, text) VALUES (?, '')",
@@ -233,30 +243,23 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
 
 async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: str):
     cmd_text = text.strip()
+    is_enable = cmd_text.startswith("+")
+    is_disable = cmd_text.startswith("-")
     settings = await db.get_settings(chat_id)
-    if cmd_text.startswith("+Приветствие") or cmd_text.startswith("+приветствие"):
-        lower_idx = text.lower().find("+приветствие")
-        if lower_idx == -1:
-            await message.reply("❌ Ошибка парсинга.")
-            return
-        after_cmd = text[lower_idx + 12:]  # 12 = len("+приветствие")
-        greeting_text = after_cmd.lstrip()
-        if not greeting_text:
+    if is_enable:
+        content, content_start = _extract_content(text, "+приветствие")
+        if content is None:
+            content, content_start = _extract_content(text, "приветствие")
+        if content is None:
             await message.reply("❌ Укажите текст приветствия после команды.")
             return
-        content_start = lower_idx + 12 + (len(after_cmd) - len(greeting_text))
-        entities = message.entities or message.caption_entities or []
-        adjusted = []
-        for e in entities:
-            if e.offset >= content_start and e.offset + e.length <= content_start + len(greeting_text):
-                adjusted.append((e, e.offset - content_start))
-        greeting_html = _entities_to_html(greeting_text, adjusted)
+        greeting_html = _content_to_html(message, content, content_start)
         settings.setdefault("greeting", {})["text"] = greeting_html
         settings["greeting"]["enabled"] = True
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Приветствие установлено!")
         logger.info(f"Greeting set in {chat_id} by {user_id}")
-    elif cmd_text.startswith("-Приветствие") or cmd_text.startswith("-приветствие"):
+    elif is_disable:
         settings["greeting"]["enabled"] = False
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Приветствие выключено.")
@@ -270,7 +273,9 @@ async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: s
 
 async def _handle_autokick(message: Message, chat_id: int, user_id: int, text: str, settings: dict):
     cmd_text = text.strip()
-    if cmd_text.startswith("+Автокик") or cmd_text.startswith("+автокик"):
+    is_enable = cmd_text.startswith("+")
+    is_disable = cmd_text.startswith("-")
+    if is_enable:
         parts = cmd_text.split()[1:]
         if len(parts) >= 3:
             try:
@@ -280,28 +285,31 @@ async def _handle_autokick(message: Message, chat_id: int, user_id: int, text: s
                 if action not in ("kick", "кик", "ban", "бан"):
                     await message.reply("❌ Действие: кик или бан")
                     return
-                if action in ("ban", "бан"):
-                    action = "ban"
-                else:
-                    action = "kick"
+                action = "ban" if action in ("ban", "бан") else "kick"
             except ValueError:
-                await message.reply("❌ Использование: +Автокик {число} {минуты} {кик/бан}")
+                await message.reply(
+                    "❌ Использование: +Автокик {число} {минуты} {кик/бан}"
+                )
                 return
             settings["autokick_on_exit"] = True
             settings["autokick_exit_count"] = count
             settings["autokick_exit_time"] = minutes
             settings["autokick_action"] = action
             await db.save_settings(chat_id, settings)
-            await message.reply(f"✅ Автокик: {count} выходов за {minutes} мин -> {action}")
+            await message.reply(
+                f"✅ Автокик: {count} выходов за {minutes} мин -> {action}"
+            )
         else:
             settings["autokick_on_exit"] = True
             settings["autokick_exit_count"] = 3
             settings["autokick_exit_time"] = 60
             settings["autokick_action"] = "kick"
             await db.save_settings(chat_id, settings)
-            await message.reply("✅ Автокик включён (3 выхода за 60 мин -> кик)")
+            await message.reply(
+                "✅ Автокик включён (3 выхода за 60 мин -> кик)"
+            )
         logger.info(f"Autokick set in {chat_id} by {user_id}")
-    elif cmd_text.startswith("-Автокик") or cmd_text.startswith("-автокик"):
+    elif is_disable:
         settings["autokick_on_exit"] = False
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Автокик выключен.")
@@ -309,23 +317,28 @@ async def _handle_autokick(message: Message, chat_id: int, user_id: int, text: s
 
 async def _handle_autokick_silent(message: Message, chat_id: int, user_id: int, text: str):
     cmd_text = text.strip()
-    if cmd_text.startswith("+Автокик молчунов") or cmd_text.startswith("+автокик молчунов"):
+    if cmd_text.startswith("+"):
         parts = cmd_text.split()
-        if len(parts) >= 3:
-            try:
-                days = int(parts[-1])
-            except ValueError:
-                await message.reply("❌ Укажите количество дней. Пример: +Автокик молчунов 7")
-                return
-        else:
-            await message.reply("❌ Укажите количество дней. Пример: +Автокик молчунов 7")
+        if len(parts) < 3:
+            await message.reply(
+                "❌ Укажите количество дней. Пример: +Автокик молчунов 7"
+            )
+            return
+        try:
+            days = int(parts[-1])
+        except ValueError:
+            await message.reply(
+                "❌ Укажите количество дней. Пример: +Автокик молчунов 7"
+            )
             return
         settings = await db.get_settings(chat_id)
         settings["autokick_silent_days"] = days
         await db.save_settings(chat_id, settings)
-        await message.reply(f"✅ Автокик молчунов включён: {days} дней без сообщений -> кик")
+        await message.reply(
+            f"✅ Автокик молчунов включён: {days} дней без сообщений -> кик"
+        )
         logger.info(f"Autokick silent set {days}d in {chat_id} by {user_id}")
-    elif cmd_text.startswith("-Автокик молчунов") or cmd_text.startswith("-автокик молчунов"):
+    elif cmd_text.startswith("-"):
         settings = await db.get_settings(chat_id)
         settings.pop("autokick_silent_days", None)
         await db.save_settings(chat_id, settings)
@@ -335,36 +348,12 @@ async def _handle_autokick_silent(message: Message, chat_id: int, user_id: int, 
 async def _handle_chat_toggle(message: Message, chat_id: int, user_id: int, text: str):
     cmd_text = text.strip()
     try:
-        if cmd_text.startswith("-Чат") or cmd_text.startswith("-чат"):
-            await bot.set_chat_permissions(
-                chat_id,
-                ChatPermissions(
-                    can_send_messages=False,
-                    can_send_media_messages=False,
-                    can_send_polls=False,
-                    can_send_other_messages=False,
-                    can_add_web_page_previews=False,
-                    can_change_info=False,
-                    can_invite_users=False,
-                    can_pin_messages=False,
-                )
-            )
+        if cmd_text.startswith("-"):
+            await bot.set_chat_permissions(chat_id, PERMS_DENY)
             await message.reply("✅ Чат закрыт. Писать могут только администраторы.")
             logger.info(f"Chat closed in {chat_id} by {user_id}")
-        elif cmd_text.startswith("+Чат") or cmd_text.startswith("+чат"):
-            await bot.set_chat_permissions(
-                chat_id,
-                ChatPermissions(
-                    can_send_messages=True,
-                    can_send_media_messages=True,
-                    can_send_polls=True,
-                    can_send_other_messages=True,
-                    can_add_web_page_previews=True,
-                    can_change_info=False,
-                    can_invite_users=True,
-                    can_pin_messages=False,
-                )
-            )
+        elif cmd_text.startswith("+"):
+            await bot.set_chat_permissions(chat_id, PERMS_ALLOW)
             await message.reply("✅ Чат открыт. Участники могут писать.")
             logger.info(f"Chat opened in {chat_id} by {user_id}")
         else:
@@ -380,19 +369,11 @@ async def _handle_topic_toggle(message: Message, chat_id: int, user_id: int, tex
         await message.reply("❌ Это не топик.")
         return
     try:
-        if cmd_text.startswith("-Топик") or cmd_text.startswith("-топик"):
-            await bot.restrict_chat_member(
-                chat_id, message.message_thread_id,
-                ChatPermissions(can_send_messages=False),
-                until_date=0
-            )
+        if cmd_text.startswith("-"):
+            await bot.close_forum_topic(chat_id, message.message_thread_id)
             await message.reply("✅ Топик закрыт.")
-        elif cmd_text.startswith("+Топик") or cmd_text.startswith("+топик"):
-            await bot.restrict_chat_member(
-                chat_id, message.message_thread_id,
-                ChatPermissions(can_send_messages=True),
-                until_date=0
-            )
+        elif cmd_text.startswith("+"):
+            await bot.reopen_forum_topic(chat_id, message.message_thread_id)
             await message.reply("✅ Топик открыт.")
     except Exception as e:
         await message.reply(f"❌ Ошибка: {e}")
@@ -403,12 +384,12 @@ async def _handle_tgadmin(message: Message, chat_id: int, user_id: int, text: st
     cmd_text = text.strip()
     target_id = await extract_user(cmd_text, message)
     if not target_id:
-        await message.reply("❌ Укажите пользователя (ссылка, @username или ответ на сообщение)")
+        await message.reply(USER_REQUIRED_MSG)
         return
     try:
-        if cmd_text.startswith("+Тг админ") or cmd_text.startswith("+тг админ"):
+        if cmd_text.startswith("+"):
             title_match = re.search(r'\[([^\]]+)\]', cmd_text)
-            title = title_match.group(1) if title_match else "Администратор"
+            title = html.escape(title_match.group(1)) if title_match else "Администратор"
             await bot.promote_chat_member(
                 chat_id, target_id,
                 can_delete_messages=True,
@@ -417,9 +398,13 @@ async def _handle_tgadmin(message: Message, chat_id: int, user_id: int, text: st
                 can_pin_messages=True,
                 can_promote_members=False,
             )
-            await message.reply(f"✅ {esc(message.from_user.first_name)}, пользователь назначен администратором с должностью «{title}».")
+            first_name = esc(message.from_user.first_name)
+            await message.reply(
+                f"✅ {first_name}, пользователь назначен администратором "
+                f"с должностью «{title}»."
+            )
             logger.info(f"Promoted {target_id} to admin in {chat_id} by {user_id}")
-        elif cmd_text.startswith("-Тг админ") or cmd_text.startswith("-тг админ"):
+        elif cmd_text.startswith("-"):
             await bot.promote_chat_member(
                 chat_id, target_id,
                 can_delete_messages=False,
@@ -439,7 +424,7 @@ async def _handle_tgadmin(message: Message, chat_id: int, user_id: int, text: st
 async def _handle_tgrights(message: Message, chat_id: int, user_id: int, text: str):
     target_id = await extract_user(text.strip(), message)
     if not target_id:
-        await message.reply("❌ Укажите пользователя.")
+        await message.reply(USER_REQUIRED_MSG)
         return
     try:
         member = await bot.get_chat_member(chat_id, target_id)
@@ -464,16 +449,23 @@ async def _handle_tag(message: Message, chat_id: int, user_id: int, text: str):
     cmd_text = text.strip()
     target_id = await extract_user(cmd_text, message)
     if not target_id:
-        await message.reply("❌ Укажите пользователя (ссылка, @username или ответ)")
+        await message.reply(USER_REQUIRED_MSG)
         return
-    if cmd_text.startswith("+Тг тег") or cmd_text.startswith("+тг тег"):
-        tag_match = re.search(r'\+тг тег\s+(.+?)(?:\s|$)', cmd_text, re.IGNORECASE)
-        if not tag_match:
-            await message.reply("❌ Укажите текст тега. Пример: +Тг тег Модератор @username")
+    if cmd_text.startswith("+"):
+        prefix_match = re.match(r'[+-]?тг тег\s+', cmd_text, re.IGNORECASE)
+        if not prefix_match:
+            await message.reply(
+                "❌ Укажите текст тега. Пример: +Тг тег Модератор @username"
+            )
             return
-        tag_text = tag_match.group(1).strip()
+        tag_text = cmd_text[prefix_match.end():]
         tag_text = re.sub(r'\s+@\S+$', '', tag_text).strip()
         tag_text = re.sub(r'\s+id[=:]\d+$', '', tag_text).strip()
+        if not tag_text:
+            await message.reply(
+                "❌ Укажите текст тега. Пример: +Тг тег Модератор @username"
+            )
+            return
         if len(tag_text) > 16:
             await message.reply("❌ Тег слишком длинный (макс. 16 символов).")
             return
@@ -484,7 +476,7 @@ async def _handle_tag(message: Message, chat_id: int, user_id: int, text: str):
             )
             await conn.commit()
         await message.reply(f"✅ Тег «{esc(tag_text)}» установлен для пользователя.")
-    elif cmd_text.startswith("-Тг тег") or cmd_text.startswith("-тг тег"):
+    elif cmd_text.startswith("-"):
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
                 "DELETE FROM group_tags WHERE chat_id = ? AND user_id = ?",
@@ -496,11 +488,11 @@ async def _handle_tag(message: Message, chat_id: int, user_id: int, text: str):
 
 async def _handle_channels(message: Message, chat_id: int, user_id: int, text: str, settings: dict):
     cmd_text = text.strip()
-    if cmd_text.startswith("+Каналы") or cmd_text.startswith("+каналы"):
+    if cmd_text.startswith("+"):
         settings["block_channels"] = False
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Сообщения от каналов разрешены.")
-    elif cmd_text.startswith("-Каналы") or cmd_text.startswith("-каналы"):
+    elif cmd_text.startswith("-"):
         settings["block_channels"] = True
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Сообщения от каналов заблокированы.")
@@ -508,36 +500,52 @@ async def _handle_channels(message: Message, chat_id: int, user_id: int, text: s
 
 async def _handle_join_leave(message: Message, chat_id: int, user_id: int, text: str, settings: dict):
     cmd_text = text.strip().lower()
-    is_join = "вход" in cmd_text
-    is_leave = "выход" in cmd_text
-    is_enable = not cmd_text.startswith("-")
-    if is_join and is_leave:
+    is_enable = cmd_text.startswith("+")
+    is_disable = cmd_text.startswith("-")
+    is_both = bool(re.search(r'вход[ы]?[-]?выход[ы]?', cmd_text))
+    is_join = bool(re.search(r'\bвход[ы]?\b', cmd_text)) and not is_both
+    is_leave = bool(re.search(r'\bвыход[ы]?\b', cmd_text)) and not is_both
+    if is_both and (is_enable or is_disable):
         settings["show_join_leave"] = True
         settings["show_join"] = is_enable
         settings["show_leave"] = is_enable
         await db.save_settings(chat_id, settings)
-        await message.reply(f"✅ Уведомления о входах/выходах {'включены' if is_enable else 'выключены'}.")
-    elif is_join:
+        status = "включены" if is_enable else "выключены"
+        await message.reply(f"✅ Уведомления о входах/выходах {status}.")
+    elif is_join and (is_enable or is_disable):
         settings["show_join"] = is_enable
         await db.save_settings(chat_id, settings)
-        await message.reply(f"✅ Уведомления о входах {'включены' if is_enable else 'выключены'}.")
-    elif is_leave:
+        status = "включены" if is_enable else "выключены"
+        await message.reply(f"✅ Уведомления о входах {status}.")
+    elif is_leave and (is_enable or is_disable):
         parts = cmd_text.split()
         threshold = None
         if len(parts) >= 2 and parts[-1].isdigit():
             threshold = int(parts[-1])
-        settings["show_leave"] = True if is_enable else False
+        settings["show_leave"] = is_enable
         if threshold is not None:
             settings["leave_threshold"] = threshold
-            await message.reply(f"✅ Уведомления о выходах включены (порог: {threshold} сообщений).")
+            await message.reply(
+                f"✅ Уведомления о выходах включены (порог: {threshold} сообщений)."
+            )
         else:
-            await message.reply(f"✅ Уведомления о выходах {'включены' if is_enable else 'выключены'}.")
+            status = "включены" if is_enable else "выключены"
+            await message.reply(f"✅ Уведомления о выходах {status}.")
         await db.save_settings(chat_id, settings)
+    else:
+        s = settings.get("show_join_leave", True)
+        j = settings.get("show_join", True)
+        lv = settings.get("show_leave", True)
+        lt = settings.get("leave_threshold", 0)
+        await message.reply(
+            f"📊 Входы: {'✅' if j else '❌'}, Выходы: {'✅' if lv else '❌'}"
+            f"{f' (порог: {lt})' if lt else ''}"
+        )
 
 
 async def _handle_minreg(message: Message, chat_id: int, user_id: int, text: str, settings: dict):
     cmd_text = text.strip().lower()
-    if cmd_text.startswith("+минрег"):
+    if cmd_text.startswith("+"):
         parts = cmd_text.split()
         if len(parts) >= 2 and parts[-1].isdigit():
             days = int(parts[-1])
@@ -546,7 +554,7 @@ async def _handle_minreg(message: Message, chat_id: int, user_id: int, text: str
             await message.reply(f"✅ Минимальная регистрация: {days} дней.")
         else:
             await message.reply("❌ Укажите количество дней. Пример: +Минрег 7")
-    elif cmd_text.startswith("-минрег"):
+    elif cmd_text.startswith("-"):
         settings["min_account_age_days"] = 0
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Минимальная регистрация отключена.")
@@ -561,7 +569,7 @@ async def _handle_minreg(message: Message, chat_id: int, user_id: int, text: str
 async def _handle_autojoin(message: Message, chat_id: int, user_id: int, text: str):
     cmd_text = text.strip().lower()
     async with aiosqlite.connect(db.db_path) as conn:
-        if cmd_text.startswith("+автозаявки"):
+        if cmd_text.startswith("+"):
             await conn.execute(
                 "INSERT OR REPLACE INTO auto_join_requests (chat_id, enabled) VALUES (?, 1)",
                 (chat_id,)
@@ -569,7 +577,7 @@ async def _handle_autojoin(message: Message, chat_id: int, user_id: int, text: s
             await conn.commit()
             await message.reply("✅ Автозаявки включены.")
             logger.info(f"Auto-join enabled in {chat_id} by {user_id}")
-        elif cmd_text.startswith("-автозаявки"):
+        elif cmd_text.startswith("-"):
             await conn.execute(
                 "INSERT OR REPLACE INTO auto_join_requests (chat_id, enabled) VALUES (?, 0)",
                 (chat_id,)
@@ -588,19 +596,24 @@ async def _handle_autojoin(message: Message, chat_id: int, user_id: int, text: s
 async def _handle_check_chat(message: Message, chat_id: int):
     target_id = await extract_user(message.text.strip(), message)
     if not target_id:
-        await message.reply("❌ Укажите пользователя (ссылка, @username или ответ)")
+        await message.reply(USER_REQUIRED_MSG)
         return
     try:
         member = await bot.get_chat_member(chat_id, target_id)
-        if member.status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
-            await message.reply(f"✅ Пользователь {esc(member.user.full_name)} присутствует в чате.")
+        status = member.status
+        if status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
+            await message.reply(
+                f"✅ Пользователь {esc(member.user.full_name)} присутствует в чате."
+            )
         else:
-            await message.reply(f"❌ Пользователь отсутствует в чате (статус: {member.status}).")
+            await message.reply(
+                f"❌ Пользователь отсутствует в чате (статус: {status})."
+            )
     except Exception:
         await message.reply("❌ Пользователь не найден в чате.")
 
 
-async def on_chat_join_request(event: ChatMemberUpdated):
+async def on_chat_join_request(event: ChatJoinRequest):
     chat_id = event.chat.id
     user_id = event.from_user.id
     async with aiosqlite.connect(db.db_path) as conn:
@@ -615,96 +628,13 @@ async def on_chat_join_request(event: ChatMemberUpdated):
                 logger.warning(f"Auto-join approve failed: {e}")
 
 
-async def on_user_join(event: ChatMemberUpdated):
-    chat_id = event.chat.id
-    user = event.new_chat_member.user
-    await cache_user_from_member(chat_id, user.id, user.username)
-    settings = await db.get_settings(chat_id)
-
-    now = int(time.time())
-    async with aiosqlite.connect(db.db_path) as conn:
-        await conn.execute(
-            "INSERT OR IGNORE INTO user_first_seen (user_id, first_seen_at) VALUES (?, ?)",
-            (user.id, now)
-        )
-        await conn.commit()
-
-    minreg = settings.get("min_account_age_days", 0)
-    if minreg > 0:
-        cursor = await conn.execute(
-            "SELECT first_seen_at FROM user_first_seen WHERE user_id = ?", (user.id,)
-        )
-        row = await cursor.fetchone()
-        if row:
-            first_seen = row[0]
-            if first_seen > 0 and (now - first_seen) < minreg * 86400:
-                try:
-                    await bot.ban_chat_member(chat_id, user.id)
-                    await bot.unban_chat_member(chat_id, user.id)
-                except Exception:
-                    pass
-                try:
-                    await bot.send_message(
-                        chat_id,
-                        f"⛔ Пользователь {esc(user.full_name)} кикнут (меньше {minreg} дней в боте)."
-                    )
-                except Exception:
-                    pass
-                return
-
-
-async def on_user_leave(event: ChatMemberUpdated):
-    chat_id = event.chat.id
-    user = event.old_chat_member.user
-    settings = await db.get_settings(chat_id)
-
-    if settings.get("autokick_on_exit", False):
-        await db.add_exit_event(chat_id, user.id)
-        exit_data = await db.get_exit_count(chat_id, user.id)
-        if exit_data:
-            count, last = exit_data
-            max_count = settings.get("autokick_exit_count", 3)
-            max_time = settings.get("autokick_exit_time", 60)
-            action = settings.get("autokick_action", "kick")
-            if count >= max_count and (time.time() - last) <= max_time * 60:
-                if action == "ban":
-                    try:
-                        await bot.ban_chat_member(chat_id, user.id)
-                        await bot.send_message(chat_id, f"⛔ {esc(user.full_name)} забанен (автокик)")
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        await bot.ban_chat_member(chat_id, user.id)
-                        await bot.unban_chat_member(chat_id, user.id)
-                        await bot.send_message(chat_id, f"👋 {esc(user.full_name)} кикнут (автокик)")
-                    except Exception:
-                        pass
-
-    if settings.get("show_join_leave", True) and settings.get("show_leave", False):
-        leave_threshold = settings.get("leave_threshold", 0)
-        if leave_threshold > 0:
-            async with aiosqlite.connect(db.db_path) as conn:
-                cursor = await conn.execute(
-                    "SELECT msg_count FROM user_last_message WHERE chat_id = ? AND user_id = ?",
-                    (chat_id, user.id)
-                )
-                row = await cursor.fetchone()
-                msg_count = row[0] if row else 0
-            if msg_count < leave_threshold:
-                return
-        try:
-            await bot.send_message(chat_id, f"👋 {esc(user.full_name)} покинул(а) чат.")
-        except Exception:
-            pass
-
-
 async def _autokick_silent_loop():
     while True:
         try:
             async with aiosqlite.connect(db.db_path) as conn:
                 cursor = await conn.execute(
-                    "SELECT chat_id FROM group_settings WHERE json_extract(config, '$.autokick_silent_days') IS NOT NULL"
+                    "SELECT chat_id FROM group_settings "
+                    "WHERE json_extract(config, '$.autokick_silent_days') IS NOT NULL"
                 )
                 rows = await cursor.fetchall()
             for (chat_id,) in rows:
@@ -716,24 +646,34 @@ async def _autokick_silent_loop():
                     cutoff = int(time.time()) - days * 86400
                     admins = await bot.get_chat_administrators(chat_id)
                     admin_ids = {a.user.id for a in admins}
-                    async with conn.execute(
-                        "SELECT DISTINCT user_id FROM activity_daily WHERE user_id NOT IN (SELECT user_id FROM user_first_seen WHERE first_seen_at > ?)",
-                        (cutoff,)
-                    ) as c:
-                        active = {row[0] for row in await c.fetchall()}
-                    async with conn.execute(
-                        "SELECT user_id FROM user_last_message WHERE chat_id = ? AND last_msg_at < ?",
-                        (chat_id, cutoff)
-                    ) as c:
-                        silent = [row[0] for row in await c.fetchall() if row[0] not in admin_ids and row[0] not in active]
+                    async with aiosqlite.connect(db.db_path) as conn2:
+                        async with conn2.execute(
+                            "SELECT DISTINCT user_id FROM user_last_message "
+                            "WHERE chat_id = ? AND last_msg_at > ?",
+                            (chat_id, cutoff)
+                        ) as c:
+                            active = {row[0] for row in await c.fetchall()}
+                        async with conn2.execute(
+                            "SELECT user_id FROM user_last_message "
+                            "WHERE chat_id = ? AND last_msg_at < ?",
+                            (chat_id, cutoff)
+                        ) as c:
+                            all_users = [row[0] for row in await c.fetchall()]
+                    silent = [
+                        uid for uid in all_users
+                        if uid not in admin_ids and uid not in active
+                    ]
                     for uid in silent[:20]:
                         try:
                             await bot.ban_chat_member(chat_id, uid)
                             await bot.unban_chat_member(chat_id, uid)
                         except Exception:
                             pass
+                    await asyncio.sleep(1)
                 except Exception as e:
-                    logger.warning(f"Autokick silent check failed for {chat_id}: {e}")
+                    logger.warning(
+                        f"Autokick silent check failed for {chat_id}: {e}"
+                    )
         except Exception as e:
             logger.warning(f"Autokick silent loop error: {e}")
         await asyncio.sleep(3600)

@@ -95,3 +95,8 @@ plugins:
       cooldown_seconds: 5
       daily_limit: 20
       context_size: 20
+
+  group_tools:
+    enabled: true
+    version: 1.0.0
+    settings: {}

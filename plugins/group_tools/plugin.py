@@ -2,9 +2,8 @@ import asyncio
 import logging
 
 import aiosqlite
-from aiogram import F, Router
-from aiogram.types import Message, ChatMemberUpdated
-from aiogram.filters import ChatMemberUpdatedFilter, JOIN_TRANSITION, LEAVE_TRANSITION
+from aiogram import Router
+from aiogram.types import ChatJoinRequest
 
 from core.plugin_manager import BasePlugin
 from core.plugin_hooks import register_hook, unregister_hook
@@ -15,20 +14,8 @@ logger = logging.getLogger(__name__)
 TOOLS_ROUTER = Router()
 
 
-@TOOLS_ROUTER.chat_member(ChatMemberUpdatedFilter(JOIN_TRANSITION))
-async def on_user_join(event: ChatMemberUpdated):
-    from .handlers import on_user_join as _join
-    await _join(event)
-
-
-@TOOLS_ROUTER.chat_member(ChatMemberUpdatedFilter(LEAVE_TRANSITION))
-async def on_user_leave(event: ChatMemberUpdated):
-    from .handlers import on_user_leave as _leave
-    await _leave(event)
-
-
 @TOOLS_ROUTER.chat_join_request()
-async def on_join_request(event: ChatMemberUpdated):
+async def on_join_request(event: ChatJoinRequest):
     from .handlers import on_chat_join_request
     await on_chat_join_request(event)
 
@@ -72,12 +59,6 @@ class GroupToolsPlugin(BasePlugin):
                 CREATE TABLE IF NOT EXISTS auto_join_requests (
                     chat_id INTEGER PRIMARY KEY,
                     enabled INTEGER NOT NULL DEFAULT 0
-                );
-                CREATE TABLE IF NOT EXISTS group_tools_config (
-                    chat_id INTEGER,
-                    key TEXT,
-                    value TEXT NOT NULL DEFAULT '',
-                    PRIMARY KEY (chat_id, key)
                 );
             """)
             await conn.commit()
