@@ -1,10 +1,11 @@
 import asyncio
 import html
+import json
 import re
 import time
 
 import aiosqlite
-from aiogram.types import Message, ChatPermissions, ChatJoinRequest
+from aiogram.types import Message, ChatPermissions, ChatJoinRequest, MessageEntity
 from aiogram.enums import ChatMemberStatus, MessageEntityType
 
 from bot import bot, logger
@@ -63,81 +64,6 @@ async def is_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 
-def _sort_key(event):
-    offset, is_close, _, _, length, idx = event
-    return (
-        offset, 0 if is_close else 1,
-        -length if not is_close else length,
-        -idx if is_close else idx,
-    )
-
-
-def _entities_to_html(text: str, entities_with_offset: list) -> str:
-    if not entities_with_offset:
-        return html.escape(text)
-
-    tag_map = {
-        MessageEntityType.BOLD: ("<b>", "</b>"),
-        MessageEntityType.ITALIC: ("<i>", "</i>"),
-        MessageEntityType.UNDERLINE: ("<u>", "</u>"),
-        MessageEntityType.STRIKETHROUGH: ("<s>", "</s>"),
-        MessageEntityType.CODE: ("<code>", "</code>"),
-        MessageEntityType.PRE: ("<pre>", "</pre>"),
-        MessageEntityType.SPOILER: ("<tg-spoiler>", "</tg-spoiler>"),
-        MessageEntityType.BLOCKQUOTE: ("<blockquote>", "</blockquote>"),
-        MessageEntityType.EXPANDABLE_BLOCKQUOTE: ("<blockquote expandable>", "</blockquote>"),
-        MessageEntityType.CUSTOM_EMOJI: ("<tg-emoji emoji-id=\"\">", "</tg-emoji>"),
-    }
-
-    events = []
-    for i, (entity, adj_offset) in enumerate(entities_with_offset):
-        if entity.type in tag_map:
-            t = tag_map[entity.type]
-            if entity.type == MessageEntityType.CUSTOM_EMOJI and hasattr(entity, "custom_emoji_id"):
-                open_tag = f'<tg-emoji emoji-id="{entity.custom_emoji_id}">'
-            else:
-                open_tag = t[0]
-            events.append((adj_offset, False, open_tag, t[1], entity.length, i))
-            events.append((adj_offset + entity.length, True, open_tag, t[1], entity.length, i))
-        elif entity.type == MessageEntityType.TEXT_LINK and entity.url:
-            safe_url = html.escape(entity.url, quote=True)
-            for off in (adj_offset, adj_offset + entity.length):
-                events.append((
-                    off, off != adj_offset,
-                    f'<a href="{safe_url}">', "</a>", entity.length, i
-                ))
-        elif entity.type == MessageEntityType.URL:
-            url_text = text[adj_offset:adj_offset + entity.length]
-            safe_url = html.escape(url_text, quote=True)
-            for off in (adj_offset, adj_offset + entity.length):
-                events.append((
-                    off, off != adj_offset,
-                    f'<a href="{safe_url}">', "</a>", entity.length, i
-                ))
-        elif entity.type == MessageEntityType.TEXT_MENTION and entity.user:
-            mention_url = f'tg://user?id={entity.user.id}'
-            for off in (adj_offset, adj_offset + entity.length):
-                events.append((
-                    off, off != adj_offset,
-                    f'<a href="{mention_url}">', "</a>", entity.length, i
-                ))
-
-    events.sort(key=_sort_key)
-
-    result = []
-    pos = 0
-    for epos, is_close, tag_open, tag_close, _, _ in events:
-        if epos > pos:
-            result.append(html.escape(text[pos:epos]))
-            pos = epos
-        result.append(tag_close if is_close else tag_open)
-
-    if pos < len(text):
-        result.append(html.escape(text[pos:]))
-
-    return "".join(result)
-
-
 def _extract_content(text: str, cmd_lower: str) -> tuple[str | None, int | None]:
     cmd_len = len(cmd_lower)
     lower_idx = text.lower().find(cmd_lower)
@@ -151,14 +77,42 @@ def _extract_content(text: str, cmd_lower: str) -> tuple[str | None, int | None]
     return content, content_start
 
 
-def _content_to_html(message: Message, content: str, content_start: int) -> str:
+def _adjust_entities_json(message: Message, content: str, content_start: int) -> str:
     entities = message.entities or message.caption_entities or []
-    adjusted = []
     end_bound = content_start + len(content)
+    result = []
     for e in entities:
         if e.offset >= content_start and e.offset + e.length <= end_bound:
-            adjusted.append((e, e.offset - content_start))
-    return _entities_to_html(content, adjusted)
+            d = {
+                "type": e.type.value,
+                "offset": e.offset - content_start,
+                "length": e.length,
+            }
+            if e.type == MessageEntityType.TEXT_LINK and e.url:
+                d["url"] = e.url
+            elif e.type == MessageEntityType.TEXT_MENTION and e.user:
+                d["type"] = "text_link"
+                d["url"] = f"tg://user?id={e.user.id}"
+            elif e.type == MessageEntityType.CUSTOM_EMOJI:
+                d["custom_emoji_id"] = getattr(e, "custom_emoji_id", "") or ""
+            result.append(d)
+    return json.dumps(result, ensure_ascii=False)
+
+
+def _entities_from_json(data: list[dict]) -> list[MessageEntity]:
+    entities = []
+    for d in data:
+        kwargs = {
+            "type": MessageEntityType(d["type"]),
+            "offset": d["offset"],
+            "length": d["length"],
+        }
+        if "url" in d:
+            kwargs["url"] = d["url"]
+        if "custom_emoji_id" in d:
+            kwargs["custom_emoji_id"] = d["custom_emoji_id"]
+        entities.append(MessageEntity(**kwargs))
+    return entities
 
 
 async def handle_group_command(
@@ -212,11 +166,11 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
         if content is None:
             await message.reply("❌ Укажите текст правил после команды.")
             return
-        rules_html = _content_to_html(message, content, content_start)
+        entities_json = _adjust_entities_json(message, content, content_start)
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
-                "INSERT OR REPLACE INTO group_rules (chat_id, text) VALUES (?, ?)",
-                (chat_id, rules_html)
+                "INSERT OR REPLACE INTO group_rules (chat_id, text, entities_json) VALUES (?, ?, ?)",
+                (chat_id, content, entities_json)
             )
             await conn.commit()
         await message.reply("✅ Правила установлены!")
@@ -224,7 +178,7 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
     elif is_disable:
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
-                "INSERT OR REPLACE INTO group_rules (chat_id, text) VALUES (?, '')",
+                "INSERT OR REPLACE INTO group_rules (chat_id, text, entities_json) VALUES (?, '', '')",
                 (chat_id,)
             )
             await conn.commit()
@@ -232,11 +186,17 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
     else:
         async with aiosqlite.connect(db.db_path) as conn:
             cursor = await conn.execute(
-                "SELECT text FROM group_rules WHERE chat_id = ?", (chat_id,)
+                "SELECT text, entities_json FROM group_rules WHERE chat_id = ?", (chat_id,)
             )
             row = await cursor.fetchone()
         if row and row[0]:
-            await message.reply(f"📜 Правила чата:\n\n{row[0]}")
+            rules_text = row[0]
+            entities_json = row[1] if len(row) > 1 else ""
+            if entities_json:
+                entities = _entities_from_json(json.loads(entities_json))
+                await message.reply(f"📜 Правила чата:\n\n{rules_text}", entities=entities)
+            else:
+                await message.reply(f"📜 Правила чата:\n\n{rules_text}")
         else:
             await message.reply("📜 Правила не установлены.")
 
@@ -253,8 +213,9 @@ async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: s
         if content is None:
             await message.reply("❌ Укажите текст приветствия после команды.")
             return
-        greeting_html = _content_to_html(message, content, content_start)
-        settings.setdefault("greeting", {})["text"] = greeting_html
+        entities_json = _adjust_entities_json(message, content, content_start)
+        settings.setdefault("greeting", {})["text"] = content
+        settings["greeting"]["entities_json"] = entities_json
         settings["greeting"]["enabled"] = True
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Приветствие установлено!")
@@ -266,7 +227,14 @@ async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: s
     else:
         g = settings.get("greeting", {})
         if g.get("text"):
-            await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
+            entities_json = g.get("entities_json", "")
+            if entities_json:
+                entities = _entities_from_json(json.loads(entities_json))
+                await message.reply(
+                    f"👋 Текущее приветствие:\n{g['text']}", entities=entities
+                )
+            else:
+                await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
         else:
             await message.reply("👋 Приветствие не установлено.")
 

@@ -44,7 +44,8 @@ class GroupToolsPlugin(BasePlugin):
             await conn.executescript("""
                 CREATE TABLE IF NOT EXISTS group_rules (
                     chat_id INTEGER PRIMARY KEY,
-                    text TEXT NOT NULL DEFAULT ''
+                    text TEXT NOT NULL DEFAULT '',
+                    entities_json TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS group_tags (
                     chat_id INTEGER,
@@ -62,3 +63,10 @@ class GroupToolsPlugin(BasePlugin):
                 );
             """)
             await conn.commit()
+            try:
+                await conn.execute(
+                    "ALTER TABLE group_rules ADD COLUMN entities_json TEXT NOT NULL DEFAULT ''"
+                )
+                await conn.commit()
+            except Exception:
+                pass
