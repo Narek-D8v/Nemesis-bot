@@ -88,13 +88,11 @@ def _adjust_entities_json(message: Message, content: str, content_start: int) ->
                 "offset": e.offset - content_start,
                 "length": e.length,
             }
-            if e.type == MessageEntityType.TEXT_LINK and e.url:
+            if str(e.type) == "text_link" and hasattr(e, "url") and e.url:
                 d["url"] = e.url
-            elif e.type == MessageEntityType.TEXT_MENTION and e.user:
+            elif str(e.type) == "text_mention" and hasattr(e, "user") and e.user:
                 d["type"] = "text_link"
                 d["url"] = f"tg://user?id={e.user.id}"
-            elif e.type == MessageEntityType.CUSTOM_EMOJI:
-                d["custom_emoji_id"] = getattr(e, "custom_emoji_id", "") or ""
             result.append(d)
     return json.dumps(result, ensure_ascii=False)
 
@@ -102,16 +100,18 @@ def _adjust_entities_json(message: Message, content: str, content_start: int) ->
 def _entities_from_json(data: list[dict]) -> list[MessageEntity]:
     entities = []
     for d in data:
-        kwargs = {
-            "type": MessageEntityType(d["type"]),
-            "offset": d["offset"],
-            "length": d["length"],
-        }
-        if "url" in d:
-            kwargs["url"] = d["url"]
-        if "custom_emoji_id" in d:
-            kwargs["custom_emoji_id"] = d["custom_emoji_id"]
-        entities.append(MessageEntity(**kwargs))
+        try:
+            etype = d["type"]
+            kwargs = {
+                "type": etype,
+                "offset": d["offset"],
+                "length": d["length"],
+            }
+            if "url" in d:
+                kwargs["url"] = d["url"]
+            entities.append(MessageEntity(**kwargs))
+        except Exception:
+            pass
     return entities
 
 
@@ -193,8 +193,14 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
             rules_text = row[0]
             entities_json = row[1] if len(row) > 1 else ""
             if entities_json:
-                entities = _entities_from_json(json.loads(entities_json))
-                await message.reply(f"📜 Правила чата:\n\n{rules_text}", entities=entities)
+                try:
+                    entities = _entities_from_json(json.loads(entities_json))
+                    prefix = "📜 Правила чата:\n\n"
+                    for e in entities:
+                        e.offset += len(prefix)
+                    await message.reply(prefix + rules_text, entities=entities)
+                except Exception:
+                    await message.reply(f"📜 Правила чата:\n\n{rules_text}")
             else:
                 await message.reply(f"📜 Правила чата:\n\n{rules_text}")
         else:
@@ -229,10 +235,14 @@ async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: s
         if g.get("text"):
             entities_json = g.get("entities_json", "")
             if entities_json:
-                entities = _entities_from_json(json.loads(entities_json))
-                await message.reply(
-                    f"👋 Текущее приветствие:\n{g['text']}", entities=entities
-                )
+                try:
+                    entities = _entities_from_json(json.loads(entities_json))
+                    prefix = "👋 Текущее приветствие:\n"
+                    for e in entities:
+                        e.offset += len(prefix)
+                    await message.reply(prefix + g["text"], entities=entities)
+                except Exception:
+                    await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
             else:
                 await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
         else:
