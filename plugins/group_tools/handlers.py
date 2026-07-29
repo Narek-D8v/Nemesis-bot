@@ -84,6 +84,27 @@ async def is_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 
+def _fmt_text(text: str) -> str:
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    lines = text.split("\n")
+    out = []
+    in_block = False
+    for line in lines:
+        if line.startswith("&gt; "):
+            if not in_block:
+                out.append("<blockquote>")
+                in_block = True
+            out.append(line[5:])
+        else:
+            if in_block:
+                out.append("</blockquote>")
+                in_block = False
+            out.append(line)
+    if in_block:
+        out.append("</blockquote>")
+    return "<br>".join(out)
+
+
 async def handle_group_command(
     message: Message, chat_id: int, user_id: int, text: str, settings: dict
 ) -> bool:
@@ -171,7 +192,7 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
             )
             row = await cursor.fetchone()
         if row and row[0]:
-            await message.reply(f"📜 Правила чата:\n\n{row[0]}")
+            await message.reply(f"📜 Правила чата:\n\n{_fmt_text(row[0])}")
         else:
             await message.reply("📜 Правила не установлены.")
 
@@ -197,10 +218,9 @@ async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: s
         await db.save_settings(chat_id, settings)
         await message.reply("✅ Приветствие выключено.")
     else:
-        settings = await db.get_settings(chat_id)
         g = settings.get("greeting", {})
         if g.get("text"):
-            await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
+            await message.reply(f"👋 Текущее приветствие:\n{_fmt_text(g['text'])}")
         else:
             await message.reply("👋 Приветствие не установлено.")
 
