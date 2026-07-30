@@ -1,5 +1,4 @@
 import asyncio
-import html
 import json
 import re
 import time
@@ -12,6 +11,8 @@ from bot import bot, logger
 from db import db
 from utils import esc
 from utils.mentions import extract_user
+
+MAX_RULES_LENGTH = 3000
 
 JOIN_LEAVE_RE = re.compile(
     r'^[+-]?(входы|выходы|входы-выходы|входывыходы)\b', re.IGNORECASE
@@ -64,6 +65,10 @@ async def is_admin(chat_id: int, user_id: int) -> bool:
         return False
 
 
+def _utf16_len(s: str) -> int:
+    return len(s.encode('utf-16-le')) // 2
+
+
 def _extract_content(text: str, cmd_lower: str) -> tuple[str | None, int | None]:
     cmd_len = len(cmd_lower)
     lower_idx = text.lower().find(cmd_lower)
@@ -77,15 +82,16 @@ def _extract_content(text: str, cmd_lower: str) -> tuple[str | None, int | None]
     return content, content_start
 
 
-def _adjust_entities_json(message: Message, content: str, content_start: int) -> str:
+def _adjust_entities_json(message: Message, content: str, content_start: int, full_text: str | None = None) -> str:
     entities = message.entities or message.caption_entities or []
-    end_bound = content_start + len(content)
+    cs_u = _utf16_len(full_text[:content_start]) if full_text else content_start
+    end_u = cs_u + _utf16_len(content)
     result = []
     for e in entities:
-        if e.offset >= content_start and e.offset + e.length <= end_bound:
+        if e.offset >= cs_u and e.offset + e.length <= end_u:
             d = {
                 "type": str(e.type),
-                "offset": e.offset - content_start,
+                "offset": e.offset - cs_u,
                 "length": e.length,
             }
             if str(e.type) == "text_link" and hasattr(e, "url") and e.url:
@@ -166,13 +172,24 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
         if content is None:
             await message.reply("❌ Укажите текст правил после команды.")
             return
-        entities_json = _adjust_entities_json(message, content, content_start)
+        if len(content) > MAX_RULES_LENGTH:
+            await message.reply(
+                f"❌ Текст слишком длинный! Максимум {MAX_RULES_LENGTH} символов.\n"
+                f"Сейчас {len(content)} символов. Пожалуйста, сократите."
+            )
+            return
+        entities_json = _adjust_entities_json(message, content, content_start, text)
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
                 "INSERT OR REPLACE INTO group_rules (chat_id, text, entities_json) VALUES (?, ?, ?)",
                 (chat_id, content, entities_json)
             )
             await conn.commit()
+        settings = await db.get_settings(chat_id)
+        settings.setdefault("daily_rules", {})["text"] = content
+        settings.setdefault("daily_rules", {})["entities_json"] = entities_json
+        settings.setdefault("daily_rules", {})["enabled"] = True
+        await db.save_settings(chat_id, settings)
         await message.reply("✅ Правила установлены!")
         logger.info(f"Rules set in {chat_id} by {user_id}")
     elif is_disable:
@@ -182,6 +199,9 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
                 (chat_id,)
             )
             await conn.commit()
+        settings = await db.get_settings(chat_id)
+        settings.setdefault("daily_rules", {})["enabled"] = False
+        await db.save_settings(chat_id, settings)
         await message.reply("✅ Правила удалены.")
     else:
         async with aiosqlite.connect(db.db_path) as conn:
@@ -189,22 +209,34 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
                 "SELECT text, entities_json FROM group_rules WHERE chat_id = ?", (chat_id,)
             )
             row = await cursor.fetchone()
-        if row and row[0]:
-            rules_text = row[0]
-            entities_json = row[1] if len(row) > 1 else ""
-            if entities_json:
-                try:
-                    entities = _entities_from_json(json.loads(entities_json))
-                    prefix = "📜 Правила чата:\n\n"
-                    for e in entities:
-                        e.offset += len(prefix)
-                    await message.reply(prefix + rules_text, entities=entities)
-                except Exception:
-                    await message.reply(f"📜 Правила чата:\n\n{rules_text}")
-            else:
-                await message.reply(f"📜 Правила чата:\n\n{rules_text}")
-        else:
-            await message.reply("📜 Правила не установлены.")
+        rules_text = row[0] if row and row[0] else None
+        entities_json = row[1] if row and len(row) > 1 else ""
+        if not rules_text:
+            settings = await db.get_settings(chat_id)
+            dr = settings.get("daily_rules", {})
+            rules_text = dr.get("text")
+            if not rules_text:
+                await message.reply("📜 Правила не установлены.")
+                return
+            entities_json = ""
+        prefix = "📜 Правила чата:\n\n"
+        full_text = prefix + rules_text
+        pu = _utf16_len(prefix)
+        entities = []
+        if entities_json:
+            try:
+                for e in json.loads(entities_json):
+                    kwargs = dict(
+                        type=e["type"],
+                        offset=e["offset"] + pu,
+                        length=e["length"],
+                    )
+                    if "url" in e:
+                        kwargs["url"] = e["url"]
+                    entities.append(MessageEntity(**kwargs))
+            except Exception:
+                entities = []
+        await message.reply(full_text, entities=entities or None, parse_mode=None)
 
 
 async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: str):
@@ -219,7 +251,13 @@ async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: s
         if content is None:
             await message.reply("❌ Укажите текст приветствия после команды.")
             return
-        entities_json = _adjust_entities_json(message, content, content_start)
+        if len(content) > MAX_RULES_LENGTH:
+            await message.reply(
+                f"❌ Текст слишком длинный! Максимум {MAX_RULES_LENGTH} символов.\n"
+                f"Сейчас {len(content)} символов. Пожалуйста, сократите."
+            )
+            return
+        entities_json = _adjust_entities_json(message, content, content_start, text)
         settings.setdefault("greeting", {})["text"] = content
         settings["greeting"]["entities_json"] = entities_json
         settings["greeting"]["enabled"] = True
@@ -233,18 +271,26 @@ async def _handle_greeting(message: Message, chat_id: int, user_id: int, text: s
     else:
         g = settings.get("greeting", {})
         if g.get("text"):
+            raw_text = g["text"]
             entities_json = g.get("entities_json", "")
+            prefix = "👋 Текущее приветствие:\n"
+            full_text = prefix + raw_text
+            pu = _utf16_len(prefix)
+            entities = []
             if entities_json:
                 try:
-                    entities = _entities_from_json(json.loads(entities_json))
-                    prefix = "👋 Текущее приветствие:\n"
-                    for e in entities:
-                        e.offset += len(prefix)
-                    await message.reply(prefix + g["text"], entities=entities)
+                    for e in json.loads(entities_json):
+                        kwargs = dict(
+                            type=e["type"],
+                            offset=e["offset"] + pu,
+                            length=e["length"],
+                        )
+                        if "url" in e:
+                            kwargs["url"] = e["url"]
+                        entities.append(MessageEntity(**kwargs))
                 except Exception:
-                    await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
-            else:
-                await message.reply(f"👋 Текущее приветствие:\n{g['text']}")
+                    entities = []
+            await message.reply(full_text, entities=entities or None, parse_mode=None)
         else:
             await message.reply("👋 Приветствие не установлено.")
 

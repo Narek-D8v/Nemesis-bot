@@ -50,9 +50,33 @@ async def daily_rules_scheduler():
                     is_premium = await db.is_premium_group(chat_id)
                     if is_premium:
                         try:
+                            text = dr.get("text", "Правила группы...")
+                            entities_json = dr.get("entities_json", "")
+                            prefix = "📋 Правила группы\n\n"
+                            full_text = prefix + text
+                            pu = len(prefix.encode('utf-16-le')) // 2
+                            entities = None
+                            if entities_json:
+                                try:
+                                    from aiogram.types import MessageEntity
+                                    eds = json.loads(entities_json)
+                                    entities = []
+                                    for e in eds:
+                                        kwargs = dict(
+                                            type=e["type"],
+                                            offset=e["offset"] + pu,
+                                            length=e["length"],
+                                        )
+                                        if "url" in e:
+                                            kwargs["url"] = e["url"]
+                                        entities.append(MessageEntity(**kwargs))
+                                except Exception:
+                                    entities = None
                             await bot.send_message(
                                 chat_id,
-                                f"📋 <b>Правила группы</b>\n\n{dr.get('text', 'Правила группы...')}"
+                                full_text,
+                                entities=entities,
+                                parse_mode=None,
                             )
                             last_posted[chat_id] = today_str
                             logger.info(f"Daily rules posted to {chat_id}")

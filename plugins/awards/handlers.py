@@ -6,7 +6,7 @@ from aiogram.types import Message
 
 from bot import bot, logger
 from db import db
-from handlers.admin import is_mod_cmd
+from handlers.admin.common import is_mod_cmd
 from utils import esc
 from utils.mentions import extract_user
 from utils.user_name import resolve_name

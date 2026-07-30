@@ -70,3 +70,10 @@ class GroupToolsPlugin(BasePlugin):
                 await conn.commit()
             except Exception:
                 pass
+            try:
+                await conn.execute(
+                    "ALTER TABLE group_rules ADD COLUMN html_parts TEXT NOT NULL DEFAULT '[]'"
+                )
+                await conn.commit()
+            except Exception:
+                pass
