@@ -198,6 +198,8 @@ async def send_captcha(chat_id: int, user_id: int, display_name: str = None):
 
 
 async def _captcha_block(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    if message.from_user.is_bot:
+        return False
     if not settings.get("captcha", {}).get("enabled", True):
         return False
     async with aiosqlite.connect(db.db_path) as conn:
@@ -930,7 +932,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
             await message.delete()
             await db.add_log(chat_id, user_id, "delete", "Маскировка символов")
             captcha_susp = settings.get("captcha", {}).get("suspicious", settings.get("captcha_for_suspicious", True))
-            if captcha_susp:
+            if captcha_susp and not message.from_user.is_bot:
                 await send_captcha(chat_id, user_id, message.from_user.full_name)
         except Exception:
             pass
