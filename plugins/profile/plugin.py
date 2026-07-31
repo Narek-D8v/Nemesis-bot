@@ -8,6 +8,17 @@ from db import db
 
 logger = logging.getLogger(__name__)
 
+PROFILE_GLOBAL_COLUMNS = {
+    "gender": "TEXT DEFAULT ''",
+    "city": "TEXT DEFAULT ''",
+    "birthday": "TEXT DEFAULT ''",
+    "birthday_visibility": "TEXT DEFAULT 'full'",
+    "description": "TEXT DEFAULT ''",
+    "motto": "TEXT DEFAULT ''",
+    "achievements_visible": "INTEGER DEFAULT 1",
+    "registered_at": "INTEGER DEFAULT 0",
+}
+
 
 class ProfilePlugin(BasePlugin):
     VERSION = "1.0.0"
@@ -67,3 +78,13 @@ class ProfilePlugin(BasePlugin):
                 );
             """)
             await conn.commit()
+            await self._migrate_profile_global(conn)
+
+    @staticmethod
+    async def _migrate_profile_global(conn: aiosqlite.Connection):
+        cursor = await conn.execute("PRAGMA table_info(profile_global)")
+        existing = {row[1] for row in await cursor.fetchall()}
+        for column, definition in PROFILE_GLOBAL_COLUMNS.items():
+            if column not in existing:
+                await conn.execute(f"ALTER TABLE profile_global ADD COLUMN {column} {definition}")
+        await conn.commit()

@@ -312,6 +312,13 @@ class Database:
                 );
                 CREATE TABLE IF NOT EXISTS profile_global (
                     user_id INTEGER PRIMARY KEY,
+                    gender TEXT DEFAULT '',
+                    city TEXT DEFAULT '',
+                    birthday TEXT DEFAULT '',
+                    birthday_visibility TEXT DEFAULT 'full',
+                    description TEXT DEFAULT '',
+                    motto TEXT DEFAULT '',
+                    achievements_visible INTEGER DEFAULT 1,
                     registered_at INTEGER DEFAULT 0
                 );
             """)
