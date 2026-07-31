@@ -11,6 +11,7 @@ from utils.time_parser import parse_time, PERMANENT
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
 from .common import check_rank, get_min_rank, get_reason, call_plugin_hooks
+from handlers.messages import MUTE_PERMISSIONS, UNMUTE_PERMISSIONS
 
 router = Router()
 
@@ -60,12 +61,19 @@ async def mute_handler(message: Message):
 
     await db.add_mute(chat_id, target_id, user_id, reason or "Нарушение", expires_at)
     await db.add_moderator_log(chat_id, user_id, "mute", target_id, reason or "Нарушение")
+    muted = False
     try:
-        await bot.restrict_chat_member(chat_id, target_id, can_send_messages=False, until_date=until_date)
+        muted = await bot.restrict_chat_member(
+            chat_id, target_id,
+            permissions=MUTE_PERMISSIONS,
+            until_date=until_date,
+        )
     except Exception as e:
         logger.warning(f"Mute failed: {e}")
     tname = await resolve_name(chat_id, target_id)
     resp = f"🔇 <b>Мут</b>\nПользователь: {tname}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
+    if not muted:
+        resp += "\n⚠️ Не удалось применить мут — проверьте права бота (can_restrict_members)."
     if show_tags:
         resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
     await message.reply(resp)
@@ -91,13 +99,20 @@ async def unmute_handler(message: Message):
         await message.reply("❌ Недостаточно прав для снятия мута.")
         return
     await db.remove_mute(chat_id, target_id)
+    unmuted = False
     try:
-        await bot.restrict_chat_member(chat_id, target_id, can_send_messages=True)
+        unmuted = await bot.restrict_chat_member(
+            chat_id, target_id,
+            permissions=UNMUTE_PERMISSIONS,
+        )
     except Exception as e:
         logger.warning(f"Unmute failed: {e}")
     await db.add_moderator_log(chat_id, user_id, "unmute", target_id, "мут снят")
     tname = await resolve_name(chat_id, target_id)
-    await message.reply(f"✅ Мут снят с {tname}.")
+    resp = f"✅ Мут снят с {tname}."
+    if not unmuted:
+        resp += "\n⚠️ Не удалось снять мут — проверьте права бота."
+    await message.reply(resp)
     try:
         await bot.send_message(target_id, "✅ С вас снят мут в группе.")
     except Exception:
@@ -212,12 +227,15 @@ async def ban_handler(message: Message):
 
     await db.add_ban(chat_id, target_id, user_id, reason or "Нарушение", expires_at)
     await db.add_moderator_log(chat_id, user_id, "ban", target_id, reason or "Нарушение")
+    banned = False
     try:
-        await bot.ban_chat_member(chat_id, target_id, until_date=until_date)
+        banned = await bot.ban_chat_member(chat_id, target_id, until_date=until_date)
     except Exception as e:
         logger.warning(f"Ban failed: {e}")
     tname = await resolve_name(chat_id, target_id)
     resp = f"⛔ <b>Бан</b>\nПользователь: {tname}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
+    if not banned:
+        resp += "\n⚠️ Не удалось забанить — проверьте права бота (can_restrict_members)."
     if show_tags:
         resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
     await message.reply(resp)

@@ -15,7 +15,7 @@ from keyboards import (
     warn_count_menu, night_mode_menu, greeting_menu,
     farewell_menu, reports_menu, whitelist_menu, blacklist_menu,
     daily_rules_menu, back_to_main, aggression_menu,
-    bayes_threshold_menu, captcha_correct_keyboard,
+    bayes_threshold_menu, captcha_correct_keyboard, group_tools_menu,
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
@@ -27,9 +27,13 @@ router = Router()
 
 from . import settings as settings_module
 from . import admin as admin_module
+from . import group_tools as group_tools_module
+from . import profile as profile_module
 
 router.include_router(settings_module.router)
 router.include_router(admin_module.router)
+router.include_router(group_tools_module.router)
+router.include_router(profile_module.router)
 
 
 @router.callback_query(lambda c: c.data.startswith("menu:"))
@@ -38,7 +42,7 @@ async def menu_callback(callback: CallbackQuery):
     chat_id = callback.message.chat.id
     user_id = callback.from_user.id
 
-    if action not in ("main", "stats", "logs", "reports", "premium"):
+    if action not in ("main", "stats", "logs", "reports", "premium", "group_tools", "profile"):
         is_tg_admin = await is_admin(chat_id, user_id)
         is_bot_mod = await db.get_user_rank(chat_id, user_id) > 0
         if not is_tg_admin and not is_bot_mod:
@@ -238,6 +242,19 @@ async def menu_callback(callback: CallbackQuery):
             "Выберите уровень строгости модерации:",
             reply_markup=aggression_menu(settings)
         )
+
+    elif action == "group_tools":
+        settings = await db.get_settings(chat_id)
+        await safe_edit(callback, 
+            "🛠 <b>Инструменты группы</b>\n\n"
+            "Управление функциями плагина GroupTools:",
+            reply_markup=await group_tools_menu(settings, chat_id)
+        )
+
+    elif action == "profile":
+        from plugins.profile.handlers import _show_card
+        await _show_card(callback.message, chat_id, user_id, viewer_id=user_id)
+        await callback.answer()
 
     await callback.answer()
 

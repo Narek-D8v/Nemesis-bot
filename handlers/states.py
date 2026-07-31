@@ -14,3 +14,18 @@ class SettingsStates(StatesGroup):
     waiting_night_end = State()
     waiting_night_action = State()
     waiting_antispam_threshold = State()
+    waiting_gt_rules_text = State()
+    waiting_gt_rules_time = State()
+    waiting_gt_autokick_silent = State()
+    waiting_gt_minreg = State()
+
+
+class ProfileStates(StatesGroup):
+    waiting_gender = State()
+    waiting_city = State()
+    waiting_birthday = State()
+    waiting_birthday_visibility = State()
+    waiting_motto = State()
+    waiting_description = State()
+    waiting_nickname = State()
+    waiting_title = State()

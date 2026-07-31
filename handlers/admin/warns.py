@@ -115,7 +115,7 @@ async def warns_by_user_handler(message: Message):
     await message.reply("\n".join(lines))
 
 
-@router.message(F.chat.type.in_({"group", "supergroup"}), F.text, lambda msg: msg.text and msg.text.strip().split()[0].lower().startswith('-') if msg.text.strip().split() else False and msg.text.strip().split()[0][1:] in ('варн', 'пред'))
+@router.message(F.chat.type.in_({"group", "supergroup"}), F.text, lambda msg: msg.text and ((msg.text.strip().split()[0].lower()[1:] if msg.text.strip().split() and msg.text.strip().split()[0].startswith('-') else '') in ('варн', 'пред')))
 async def unwarn_handler(message: Message):
     text = message.text.strip()
     chat_id = message.chat.id

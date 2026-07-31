@@ -1,5 +1,6 @@
 import re
 import os
+import json
 import time
 import tempfile
 import random
@@ -9,7 +10,7 @@ import aiosqlite
 from collections import OrderedDict
 
 from aiogram import Router, F
-from aiogram.types import Message, ChatMemberUpdated
+from aiogram.types import Message, ChatMemberUpdated, ChatPermissions
 from aiogram.enums import ChatType, ChatMemberStatus
 from aiogram.filters import (
     Command,
@@ -39,6 +40,20 @@ router = Router()
 last_messages: OrderedDict = OrderedDict()
 _classifiers: dict[str, BayesClassifier] = {}
 
+MUTE_PERMISSIONS = ChatPermissions(
+    can_send_messages=False, can_send_media_messages=False,
+    can_send_polls=False, can_send_other_messages=False,
+    can_add_web_page_previews=False, can_change_info=False,
+    can_invite_users=True, can_pin_messages=False,
+)
+
+UNMUTE_PERMISSIONS = ChatPermissions(
+    can_send_messages=True, can_send_media_messages=True,
+    can_send_polls=True, can_send_other_messages=True,
+    can_add_web_page_previews=True, can_change_info=False,
+    can_invite_users=True, can_pin_messages=False,
+)
+
 
 async def is_admin(chat_id: int, user_id: int) -> bool:
     try:
@@ -58,18 +73,20 @@ async def is_blacklisted(chat_id: int, user_id: int, settings: dict) -> bool:
     return user_id in blacklist
 
 
-async def mute_user(chat_id: int, user_id: int, duration_minutes: int, reason: str):
+async def mute_user(chat_id: int, user_id: int, duration_minutes: int, reason: str) -> bool:
     try:
         until_date = int(time.time()) + duration_minutes * 60
         await bot.restrict_chat_member(
             chat_id, user_id,
-            can_send_messages=False,
+            permissions=MUTE_PERMISSIONS,
             until_date=until_date,
         )
         await db.add_log(chat_id, user_id, "mute", reason)
         logger.info(f"Muted {user_id} in {chat_id} for {duration_minutes}min: {reason}")
+        return True
     except Exception as e:
         logger.warning(f"Mute failed: {e}")
+        return False
 
 
 async def ban_user(chat_id: int, user_id: int, reason: str):
@@ -233,10 +250,64 @@ async def on_user_join(event: ChatMemberUpdated):
         await send_captcha(chat_id, user.id)
 
     if settings.get("show_join_leave", True) and settings.get("greeting", {}).get("enabled", True):
+        username_value = esc(username_display)
+
         greeting_text = settings["greeting"]["text"]
-        greeting_text = greeting_text.replace("{username}", esc(username_display))
+        greeting_entities_json = settings["greeting"].get("entities_json", "")
+
+        replacements = [
+            ("{username}", username_value),
+            ("{имя}", username_value),
+        ]
+
+        entity_dicts = []
+        if greeting_entities_json:
+            try:
+                entity_dicts = json.loads(greeting_entities_json)
+            except Exception:
+                entity_dicts = []
+
+        # Apply linear replacements, adjust entity offsets
+        for key, value in replacements:
+            idx = greeting_text.find(key)
+            if idx != -1:
+                diff = len(value) - len(key)
+                if diff != 0:
+                    for e in entity_dicts:
+                        if isinstance(e, dict):
+                            off = e["offset"]
+                            ln = e["length"]
+                            if off > idx + len(key):
+                                e["offset"] = off + diff
+                            elif off + ln > idx and off < idx + len(key):
+                                e["length"] = -1
+                greeting_text = greeting_text.replace(key, value, 1)
+                entity_dicts = [e for e in entity_dicts if isinstance(e, dict) and e.get("length", 0) > 0]
+
+        # Handle gender and plural placeholders
+        greeting_text = re.sub(
+            r'\{ж\|([^|]+)\|([^|]+)\}',
+            lambda m: m.group(1) if user.last_name else m.group(2),
+            greeting_text
+        )
+        greeting_text = greeting_text.replace("{ж|мн}", "")
+
+        # Send with entities
+        from aiogram.types import MessageEntity
+        if entity_dicts:
+            entities = []
+            for d in entity_dicts:
+                try:
+                    kwargs = dict(type=d["type"], offset=d["offset"], length=d["length"])
+                    if "url" in d:
+                        kwargs["url"] = d["url"]
+                    entities.append(MessageEntity(**kwargs))
+                except Exception:
+                    pass
+        else:
+            entities = None
         try:
-            await bot.send_message(chat_id, greeting_text)
+            await bot.send_message(chat_id, greeting_text, entities=entities, parse_mode=None)
         except Exception:
             pass
 
@@ -269,8 +340,19 @@ async def on_user_leave(event: ChatMemberUpdated):
                 except Exception as e:
                     logger.warning(f"Autokick on exit failed: {e}")
 
-    if settings.get("show_join_leave", True) and settings.get("farewell", {}).get("enabled", True):
+    if settings.get("show_join_leave", True) and settings.get("show_leave", True) and settings.get("farewell", {}).get("enabled", True):
         username_display = f"@{user.username}" if user.username else user.full_name
+        leave_threshold = settings.get("leave_threshold", 0)
+        if leave_threshold > 0:
+            async with aiosqlite.connect(db.db_path) as conn:
+                cursor = await conn.execute(
+                    "SELECT msg_count FROM user_last_message WHERE chat_id = ? AND user_id = ?",
+                    (chat_id, user.id)
+                )
+                row = await cursor.fetchone()
+                msg_count = row[0] if row else 0
+            if msg_count < leave_threshold:
+                return
         farewell_text = settings["farewell"]["text"]
         farewell_text = farewell_text.replace("{username}", esc(username_display))
         try:
@@ -445,7 +527,17 @@ async def message_handler(message: Message):
 
     await cache_user_from_message(message)
 
+    if not message.from_user.is_bot:
+        await db.track_message(chat_id, user_id)
+
     settings = await db.get_settings(chat_id)
+
+    if settings.get("block_channels", False) and message.sender_chat and message.sender_chat.type == "channel":
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return
 
     for hook in get_hooks():
         try:
@@ -507,7 +599,8 @@ async def file_no_caption_handler(message: Message):
 
     await cache_user_from_message(message)
 
-    await db.track_message(chat_id, user_id)
+    if not message.from_user.is_bot:
+        await db.track_message(chat_id, user_id)
 
     settings = await db.get_settings(chat_id)
 
