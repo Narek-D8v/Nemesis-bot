@@ -14,7 +14,7 @@ URL_PATTERN = re.compile(
     re.IGNORECASE
 )
 INVITE_PATTERN = re.compile(
-    r'(?:t\.me/joinchat/|t\.me/|telegram\.me/|telegram\.dog/)\S+',
+    r'(?:t\.me/(?:\+|joinchat/)|telegram\.me/(?:\+|joinchat/)|telegram\.dog/(?:\+|joinchat/))\S*',
     re.IGNORECASE
 )
 MENTION_ALL_PATTERN = re.compile(r'@(?:everyone|all|channel)', re.IGNORECASE)

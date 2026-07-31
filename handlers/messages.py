@@ -161,10 +161,13 @@ async def check_triggers(message: Message, chat_id: int, user_id: int, text: str
     return False
 
 
-async def send_captcha(chat_id: int, user_id: int):
+async def send_captcha(chat_id: int, user_id: int, display_name: str = None):
     settings = await db.get_settings(chat_id)
     captcha_type = settings.get("captcha", {}).get("type", "button")
     answer = None
+    if display_name is None:
+        display_name = "User"
+    name_link = f"<a href='tg://user?id={user_id}'>{esc(display_name)}</a>"
     try:
         if captcha_type == "math":
             a, b = random.randint(1, 10), random.randint(1, 10)
@@ -172,14 +175,14 @@ async def send_captcha(chat_id: int, user_id: int):
             msg = await bot.send_message(
                 chat_id,
                 f"🧩 <b>Капча для новичка!</b>\n\n"
-                f"<a href='tg://user?id={user_id}'>User</a>, реши пример: {a} + {b} = ?\n"
+                f"{name_link}, реши пример: {a} + {b} = ?\n"
                 f"У вас есть 60 секунд.",
             )
         else:
             msg = await bot.send_message(
                 chat_id,
                 f"🧩 <b>Капча для новичка!</b>\n\n"
-                f"<a href='tg://user?id={user_id}'>User</a>, нажми кнопку, чтобы подтвердить, что ты не робот.",
+                f"{name_link}, нажми кнопку, чтобы подтвердить, что ты не робот.",
                 reply_markup=captcha_correct_keyboard(),
             )
     except Exception as e:
@@ -291,8 +294,9 @@ async def on_user_join(event: ChatMemberUpdated):
                 pass
             return
 
-    if settings.get("captcha", {}).get("enabled", True):
-        await send_captcha(chat_id, user.id)
+    if not user.is_bot and settings.get("captcha", {}).get("enabled", True):
+        if await db.is_first_join(chat_id, user.id):
+            await send_captcha(chat_id, user.id, user.full_name or user.username)
 
     if settings.get("show_join_leave", True) and settings.get("greeting", {}).get("enabled", True):
         username_value = esc(username_display)
@@ -927,7 +931,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
             await db.add_log(chat_id, user_id, "delete", "Маскировка символов")
             captcha_susp = settings.get("captcha", {}).get("suspicious", settings.get("captcha_for_suspicious", True))
             if captcha_susp:
-                await send_captcha(chat_id, user_id)
+                await send_captcha(chat_id, user_id, message.from_user.full_name)
         except Exception:
             pass
         return
