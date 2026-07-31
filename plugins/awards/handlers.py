@@ -7,7 +7,7 @@ from aiogram.types import Message
 from bot import bot, logger
 from db import db
 from handlers.admin.common import is_mod_cmd
-from utils import esc
+from utils import esc, name_link
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
 
@@ -61,7 +61,7 @@ async def handle_award_commands(message: Message, chat_id: int, user_id: int, te
         if not rows:
             await message.reply("У вас пока нет наград.")
             return True
-        lines = [f"🎖️ <b>Награды {esc(message.from_user.first_name or '')}:</b>\n"]
+        lines = [f"🎖️ <b>Награды {name_link(message.from_user.id, message.from_user.first_name or '')}:</b>\n"]
         for aid, degree, desc, giver_id, created_at, expires_at in rows:
             emoji = MEDAL_EMOJIS.get(degree, "🎖️")
             name = MEDAL_NAMES.get(degree, f"Степень {degree}")

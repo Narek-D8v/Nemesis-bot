@@ -10,7 +10,7 @@ from aiogram.enums import ChatMemberStatus, MessageEntityType
 
 from bot import bot, logger
 from db import db
-from utils import esc
+from utils import esc, name_link
 from utils.mentions import extract_user
 
 MAX_RULES_LENGTH = 3000
@@ -436,9 +436,8 @@ async def _handle_tgadmin(message: Message, chat_id: int, user_id: int, text: st
                 can_pin_messages=True,
                 can_promote_members=False,
             )
-            first_name = esc(message.from_user.first_name)
             await message.reply(
-                f"✅ {first_name}, пользователь назначен администратором "
+                f"✅ {name_link(message.from_user.id, message.from_user.first_name)}, пользователь назначен администратором "
                 f"с должностью «{title}»."
             )
             logger.info(f"Promoted {target_id} to admin in {chat_id} by {user_id}")
@@ -471,7 +470,7 @@ async def _handle_tgrights(message: Message, chat_id: int, user_id: int, text: s
             return
         rights = member
         txt = (
-            f"👤 Права {esc(member.user.full_name)}:\n"
+            f"👤 Права {name_link(member.user.id, member.user.full_name)}:\n"
             f"Удаление сообщений: {'✅' if rights.can_delete_messages else '❌'}\n"
             f"Блокировка: {'✅' if rights.can_restrict_members else '❌'}\n"
             f"Приглашение: {'✅' if rights.can_invite_users else '❌'}\n"
@@ -641,7 +640,7 @@ async def _handle_check_chat(message: Message, chat_id: int):
         status = member.status
         if status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
             await message.reply(
-                f"✅ Пользователь {esc(member.user.full_name)} присутствует в чате."
+                f"✅ Пользователь {name_link(member.user.id, member.user.full_name)} присутствует в чате."
             )
         else:
             await message.reply(

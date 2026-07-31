@@ -5,6 +5,7 @@ import os
 import re
 import tempfile
 import time
+import urllib.parse
 from datetime import datetime
 
 import aiosqlite
@@ -12,11 +13,13 @@ from aiogram.types import Message, FSInputFile
 
 from bot import bot, logger
 from db import db
-from utils import esc
+from utils import esc, name_link
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
 
-CITIES_BASE_URL = "https://iris-tg.ru/cities/{}"
+def _city_wiki_link(city: str) -> str:
+    return "https://ru.wikipedia.org/wiki/" + urllib.parse.quote(city.replace(" ", "_"))
+
 _CITY_INDEX: dict[str, dict] = {}
 try:
     _cities_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cities.json")
@@ -521,7 +524,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, user_id)
             )
             total = (await cursor.fetchone())[0]
-        nm = esc(message.from_user.first_name or "Пользователь")
+        nm = name_link(user_id, message.from_user.first_name or "Пользователь")
         medals_text = await _format_medals(chat_id, user_id)
         if not medals_text:
             await message.reply(f"У вас пока нет наград. Всего: {total}")
@@ -697,7 +700,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, user_id)
             )
             achievements = (await cursor.fetchone())[0]
-        nm = esc(message.from_user.first_name or "Пользователь")
+        nm = name_link(user_id, message.from_user.first_name or "Пользователь")
         rating_str = str(rep[0]) if rep else "0"
         stars_str = str(rep[1]) if rep else "0"
         await message.reply(
@@ -1029,7 +1032,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (user_id, city, city)
             )
             await conn.commit()
-        await message.reply(f"✅ Город установлен: {esc(city)} ({CITIES_BASE_URL.format(city_id)})")
+        await message.reply(f"✅ Город установлен: <a href='{_city_wiki_link(city)}'>{esc(city)}</a>")
         return True
 
     if RM_CITY.match(stripped):
@@ -1208,10 +1211,7 @@ async def _make_activity_chart_bytes(target_id: int, days: int = 14) -> bytes | 
         return None
 
 def _card_caption(name: str, username: str | None, target_id: int, pgr, last_seen: int, act: tuple, stars: int) -> str:
-    if username:
-        name_html = f'<a href="https://t.me/{esc(username)}">{esc(name)}</a>'
-    else:
-        name_html = esc(name)
+    name_html = name_link(target_id, name)
     seen = _last_seen_str(last_seen)
     lines = [f"👤 Это {name_html}{f' ({seen})' if seen else ''}"]
     lines.append(f"🆔 @{target_id}")
@@ -1243,9 +1243,10 @@ def _card_caption(name: str, username: str | None, target_id: int, pgr, last_see
     if city:
         cinfo = _CITY_INDEX.get(city.strip().lower())
         if cinfo:
-            lines.append(f"🗺 Город: {esc(cinfo['name'])} ({CITIES_BASE_URL.format(cinfo['id'])})")
+            cname = cinfo['name']
+            lines.append(f"🗺 Город: <a href='{_city_wiki_link(cname)}'>{esc(cname)}</a>")
         else:
-            lines.append(f"🗺 Город: {esc(city)}")
+            lines.append(f"🗺 Город: <a href='{_city_wiki_link(city)}'>{esc(city)}</a>")
     else:
         lines.append("🗺 Город: не указан")
 
