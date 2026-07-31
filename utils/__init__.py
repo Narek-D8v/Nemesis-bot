@@ -84,12 +84,10 @@ def has_mask(text: str) -> bool:
     has_cyrillic = bool(re.search(r'[а-яё]', text, re.IGNORECASE))
     if not has_cyrillic:
         return False
-    text_no_yo = text.replace('ё', 'е').replace('Ё', 'Е')
-    normalized = normalize_text(text_no_yo)
-    if normalized == text_no_yo:
-        return False
-    diff_count = sum(1 for a, b in zip(text_no_yo, normalized) if a != b)
-    return diff_count >= 2
+    for word in re.findall(r'[a-zа-яё]+', text, re.IGNORECASE):
+        if re.search(r'[а-яё]', word, re.IGNORECASE) and re.search(r'[a-z]', word, re.IGNORECASE):
+            return True
+    return False
 
 def _strip_non_alpha(text: str) -> str:
     return re.sub(r'[^a-z0-9]', '', text)

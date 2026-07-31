@@ -299,6 +299,13 @@ async def on_user_join(event: ChatMemberUpdated):
     if not user.is_bot and settings.get("captcha", {}).get("enabled", True):
         if await db.is_first_join(chat_id, user.id):
             await send_captcha(chat_id, user.id, user.full_name or user.username)
+        else:
+            async with aiosqlite.connect(db.db_path) as conn:
+                await conn.execute(
+                    "DELETE FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
+                    (user.id, chat_id),
+                )
+                await conn.commit()
 
     if settings.get("show_join_leave", True) and settings.get("greeting", {}).get("enabled", True):
         username_value = esc(username_display)
@@ -645,7 +652,7 @@ async def message_handler(message: Message):
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), (F.document | F.photo | F.video | F.audio | F.voice), ~F.caption)
 async def file_no_caption_handler(message: Message):
-    if message.from_user is None:
+    if message.from_user is None or message.from_user.is_bot:
         return
     chat_id = message.chat.id
     user_id = message.from_user.id
@@ -725,6 +732,8 @@ async def file_no_caption_handler(message: Message):
 
 
 async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text: str, settings: dict):
+    if message.from_user.is_bot:
+        return
     if await is_whitelisted(chat_id, user_id, settings):
         return
 
