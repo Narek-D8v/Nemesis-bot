@@ -6,8 +6,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot import bot, logger
 from db import db
-from utils import esc
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 from keyboards import profile_edit_menu, profile_bdayvis_menu, profile_activity_menu
 from handlers.states import ProfileStates
 from handlers import _pending_edits
@@ -37,16 +36,6 @@ FIELD_PROMPTS = {
 
 BDVIS_STORED = {"full": "full", "month": "месяц", "year": "год"}
 BDVIS_LABELS = {"full": "полностью", "month": "месяц и год", "year": "только год"}
-
-
-async def _user_name(chat_id: int, user_id: int, is_pm: bool) -> str:
-    if not is_pm:
-        return await resolve_name(chat_id, user_id)
-    try:
-        chat = await bot.get_chat(user_id)
-        return esc(chat.first_name or chat.username or "пользователь")
-    except Exception:
-        return "пользователь"
 
 
 async def _own_only(callback: CallbackQuery, target: int, user_id: int) -> bool:
@@ -159,7 +148,7 @@ async def profile_callbacks(callback: CallbackQuery, state: FSMContext):
                     (user_id, target)
                 )
                 await conn.commit()
-                tname = await _user_name(chat_id, target, callback.message.chat.type == "private")
+                tname = await resolve_name_link(chat_id, target)
                 await callback.message.answer(f"✅ Вы отписались от {tname}.")
             else:
                 from plugins.profile.handlers import MAX_SUBS
@@ -177,7 +166,7 @@ async def profile_callbacks(callback: CallbackQuery, state: FSMContext):
                     (user_id, target, int(time.time()))
                 )
                 await conn.commit()
-                tname = await _user_name(chat_id, target, callback.message.chat.type == "private")
+                tname = await resolve_name_link(chat_id, target)
                 await callback.message.answer(f"✅ Вы подписались на {tname}.")
         await callback.answer()
         return
@@ -197,7 +186,7 @@ async def profile_callbacks(callback: CallbackQuery, state: FSMContext):
             return
         names = []
         for (tid,) in rows:
-            names.append(await _user_name(chat_id, tid, callback.message.chat.type == "private"))
+            names.append(await resolve_name_link(chat_id, tid))
         await callback.message.answer(f"📋 <b>Ваши подписки:</b>\n" + ", ".join(names))
         await callback.answer()
         return
@@ -230,7 +219,7 @@ async def profile_callbacks(callback: CallbackQuery, state: FSMContext):
             await callback.message.answer("🔒 Пользователь скрыл свои награды.")
             await callback.answer()
             return
-        name = await _user_name(chat_id, target, callback.message.chat.type == "private")
+        name = await resolve_name_link(chat_id, target)
         medals_text = await _format_medals(chat_id, target)
         if not medals_text:
             await callback.message.answer(f"У {name} пока нет наград.")

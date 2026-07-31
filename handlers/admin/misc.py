@@ -10,7 +10,7 @@ from db import db
 from utils import esc, format_duration
 from utils.time_parser import parse_time
 from utils.mentions import extract_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 from .common import RANK_NAMES, check_rank, get_min_rank, get_reason, call_plugin_hooks
 
 router = Router()
@@ -98,7 +98,7 @@ async def add_inheritance_handler(message: Message):
         await message.reply("❌ Укажите наследника (ответом или @username).")
         return
     await db.add_inheritance(chat_id, user_id, target_id)
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     await message.reply(f"✅ Завещание оставлено на пользователя {tname}.")
 
 
@@ -108,7 +108,7 @@ async def my_inheritance_handler(message: Message):
     user_id = message.from_user.id
     inh = await db.get_inheritance(chat_id, user_id)
     if inh:
-        hname = await resolve_name(chat_id, inh[0])
+        hname = await resolve_name_link(chat_id, inh[0])
         ts = time.strftime("%d.%m.%Y", time.localtime(inh[1]))
         await message.reply(f"📜 Ваше завещание: {hname} (от {ts})")
     else:
@@ -170,7 +170,7 @@ async def transfer_creator_handler(message: Message):
         return
     await db.set_user_rank(chat_id, target_id, 5, user_id)
     await db.set_user_rank(chat_id, user_id, 4, user_id)
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     await message.reply(f"✅ Права создателя переданы {tname}.")
 
 

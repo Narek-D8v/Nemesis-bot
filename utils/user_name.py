@@ -26,3 +26,8 @@ async def get_user_display_name(chat_id: int, user_id: int) -> str | None:
 async def resolve_name(chat_id: int, user_id: int) -> str:
     name = await get_user_display_name(chat_id, user_id)
     return name or "пользователь"
+
+
+async def resolve_name_link(chat_id: int, user_id: int) -> str:
+    name = await resolve_name(chat_id, user_id)
+    return f"<a href='tg://user?id={user_id}'>{name}</a>"

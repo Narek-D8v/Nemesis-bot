@@ -9,7 +9,7 @@ from db import db
 from utils import esc, format_duration, name_link
 from utils.time_parser import parse_time, PERMANENT
 from utils.mentions import extract_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 from .common import check_rank, get_min_rank, get_reason, call_plugin_hooks
 from handlers.messages import MUTE_PERMISSIONS, UNMUTE_PERMISSIONS
 
@@ -70,7 +70,7 @@ async def mute_handler(message: Message):
         )
     except Exception as e:
         logger.warning(f"Mute failed: {e}")
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     resp = f"🔇 <b>Мут</b>\nПользователь: {tname}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
     if not muted:
         resp += "\n⚠️ Не удалось применить мут — проверьте права бота (can_restrict_members)."
@@ -108,7 +108,7 @@ async def unmute_handler(message: Message):
     except Exception as e:
         logger.warning(f"Unmute failed: {e}")
     await db.add_moderator_log(chat_id, user_id, "unmute", target_id, "мут снят")
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     resp = f"✅ Мут снят с {tname}."
     if not unmuted:
         resp += "\n⚠️ Не удалось снять мут — проверьте права бота."
@@ -137,7 +137,7 @@ async def mute_list_handler(message: Message):
             dur = format_duration(left // 60)
         else:
             dur = "навсегда"
-        mname = await resolve_name(chat_id, mid)
+        mname = await resolve_name_link(chat_id, mid)
         lines.append(f"• {mname} — {dur} ({esc(mreason[:30])})")
     await message.reply("\n".join(lines))
 
@@ -153,7 +153,7 @@ async def mute_check_handler(message: Message):
         await message.reply("❌ Укажите пользователя.")
         return
     m = await db.get_active_mute(chat_id, target_id)
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     if m:
         mexp = m[3]
         if mexp:
@@ -232,7 +232,7 @@ async def ban_handler(message: Message):
         banned = await bot.ban_chat_member(chat_id, target_id, until_date=until_date)
     except Exception as e:
         logger.warning(f"Ban failed: {e}")
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     resp = f"⛔ <b>Бан</b>\nПользователь: {tname}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
     if not banned:
         resp += "\n⚠️ Не удалось забанить — проверьте права бота (can_restrict_members)."
@@ -266,7 +266,7 @@ async def unban_handler(message: Message):
     except Exception as e:
         logger.warning(f"Unban failed: {e}")
     await db.add_moderator_log(chat_id, user_id, "unban", target_id, "разбанен")
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     await message.reply(f"✅ Пользователь {tname} разбанен.")
 
 
@@ -299,12 +299,12 @@ async def ban_reason_handler(message: Message):
     ban = await db.get_active_ban(chat_id, target_id)
     if ban:
         ts = time.strftime("%d.%m.%Y %H:%M", time.localtime(ban[2]))
-        mname = await resolve_name(chat_id, ban[4])
+        mname = await resolve_name_link(chat_id, ban[4])
         dur = "навсегда"
         if ban[3]:
             left = max(0, ban[3] - int(time.time())) // 60
             dur = format_duration(left)
-        tname = await resolve_name(chat_id, target_id)
+        tname = await resolve_name_link(chat_id, target_id)
         await message.reply(f"⛔ <b>Причина бана {tname}</b>\nМодератор: {mname}\nПричина: {esc(ban[1])}\nСрок: {dur}\nДата: {ts}")
     else:
         await message.reply("Пользователь не забанен.")
@@ -328,7 +328,7 @@ async def banlist_handler(message: Message):
             dur = format_duration(left // 60)
         else:
             dur = "навсегда"
-        bname = await resolve_name(chat_id, bid)
+        bname = await resolve_name_link(chat_id, bid)
         lines.append(f"• {bname} — {dur} ({esc(breason[:30])})")
     await message.reply("\n".join(lines))
 

@@ -11,7 +11,7 @@ from utils import esc, name_link
 from utils.time_parser import parse_time
 from utils.mentions import extract_user
 from utils.chat_utils import delete_messages, get_messages_above, get_messages_below, kick_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 from handlers.admin.common import check_rank, get_min_rank
 
 router = Router()
@@ -141,7 +141,7 @@ async def cleanup_handler(message: Message):
             await db.add_kick(chat_id, target_id, user_id, reason)
             await db.add_moderator_log(chat_id, user_id, "kick", target_id, reason)
             if await kick_user(chat_id, target_id):
-                tname = await resolve_name(chat_id, target_id)
+                tname = await resolve_name_link(chat_id, target_id)
                 resp = f"👢 Пользователь {tname} кикнут."
                 if show_tags:
                     resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
@@ -330,7 +330,7 @@ async def cleanup_handler(message: Message):
         users = await db.get_users_by_msg_count(chat_id, min_count=0)
         deleted_list = []
         for did, dcount, dtime in users:
-            dname = await resolve_name(chat_id, did)
+            dname = await resolve_name_link(chat_id, did)
             try:
                 member = await bot.get_chat_member(chat_id, did)
                 if member.user.is_deleted:

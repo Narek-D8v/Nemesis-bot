@@ -262,7 +262,7 @@ async def on_user_join(event: ChatMemberUpdated):
             try:
                 await bot.send_message(
                     chat_id,
-                    f"⛔ {username_display} забанен (в чёрном списке)"
+                    f"⛔ {name_link(user.id, username_display)} забанен (в чёрном списке)"
                 )
             except Exception:
                 pass
@@ -278,7 +278,7 @@ async def on_user_join(event: ChatMemberUpdated):
             try:
                 await bot.send_message(
                     chat_id,
-                    f"⛔ {username_display} забанен (аккаунт младше {settings['min_account_age_days']} дней)"
+                    f"⛔ {name_link(user.id, username_display)} забанен (аккаунт младше {settings['min_account_age_days']} дней)"
                 )
             except Exception:
                 pass
@@ -290,7 +290,7 @@ async def on_user_join(event: ChatMemberUpdated):
             try:
                 await bot.send_message(
                     chat_id,
-                    f"⛔ {username_display} забанен (нет аватарки)"
+                    f"⛔ {name_link(user.id, username_display)} забанен (нет аватарки)"
                 )
             except Exception:
                 pass
@@ -308,7 +308,7 @@ async def on_user_join(event: ChatMemberUpdated):
                 await conn.commit()
 
     if settings.get("show_join_leave", True) and settings.get("greeting", {}).get("enabled", True):
-        username_value = esc(username_display)
+        username_value = username_display
 
         greeting_text = settings["greeting"]["text"]
         greeting_entities_json = settings["greeting"].get("entities_json", "")
@@ -341,6 +341,12 @@ async def on_user_join(event: ChatMemberUpdated):
                                 e["length"] = -1
                 greeting_text = greeting_text.replace(key, value, 1)
                 entity_dicts = [e for e in entity_dicts if isinstance(e, dict) and e.get("length", 0) > 0]
+                entity_dicts.append({
+                    "type": "text_link",
+                    "offset": idx,
+                    "length": len(value),
+                    "url": f"tg://user?id={user.id}",
+                })
 
         # Handle gender and plural placeholders
         greeting_text = re.sub(
@@ -412,7 +418,7 @@ async def on_user_leave(event: ChatMemberUpdated):
             if msg_count < leave_threshold:
                 return
         farewell_text = settings["farewell"]["text"]
-        farewell_text = farewell_text.replace("{username}", esc(username_display))
+        farewell_text = farewell_text.replace("{username}", name_link(user.id, username_display))
         try:
             await bot.send_message(chat_id, farewell_text)
         except Exception:

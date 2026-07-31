@@ -9,7 +9,7 @@ from db import db
 from utils import esc, format_duration, name_link
 from utils.time_parser import parse_time
 from utils.mentions import extract_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 from .common import check_rank, get_min_rank, get_reason, call_plugin_hooks
 
 router = Router()
@@ -46,7 +46,7 @@ async def warn_handler(message: Message):
     await db.add_moderator_log(chat_id, user_id, "warn", target_id, reason)
     wcount = await db.count_active_warns(chat_id, target_id)
     wlimit = settings.get("warn_limit", 3)
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     resp = f"⚠️ <b>Предупреждение</b>\nПользователь: {tname}\nПричина: {esc(reason)}\nПредупреждений: {wcount}/{wlimit}"
     if show_tags:
         resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
@@ -61,7 +61,7 @@ async def warn_handler(message: Message):
         await db.add_ban(chat_id, target_id, user_id, f"Достигнут лимит предупреждений ({wcount})", ban_expires)
         await bot.ban_chat_member(chat_id, target_id)
         await db.add_moderator_log(chat_id, user_id, "ban", target_id, "Лимит предупреждений")
-        tname = await resolve_name(chat_id, target_id)
+        tname = await resolve_name_link(chat_id, target_id)
         await message.reply(f"⛔ Пользователь {tname} забанен (лимит предупреждений).")
         await db.clear_warns(chat_id, target_id)
 
@@ -76,7 +76,7 @@ async def warnlist_handler(message: Message):
     lines = ["📋 <b>Список предупреждений:</b>\n"]
     for row in warns[:15]:
         ts = time.strftime("%d.%m %H:%M", time.localtime(row[5]))
-        wn = await resolve_name(chat_id, row[2])
+        wn = await resolve_name_link(chat_id, row[2])
         lines.append(f"• {wn} — {esc(row[4])} ({ts})")
     await message.reply("\n".join(lines))
 
@@ -104,7 +104,7 @@ async def warns_by_user_handler(message: Message):
     chat_id = message.chat.id
     target_id = await extract_user(text, message) or message.from_user.id
     warns = await db.get_active_warns(chat_id, target_id)
-    uname = await resolve_name(chat_id, target_id)
+    uname = await resolve_name_link(chat_id, target_id)
     if not warns:
         await message.reply(f"У пользователя {uname} нет активных предупреждений.")
         return
@@ -132,7 +132,7 @@ async def unwarn_handler(message: Message):
         return
     if await db.remove_last_warn(chat_id, target_id):
         await db.add_moderator_log(chat_id, user_id, "unwarn", target_id, "снято последнее")
-        tname = await resolve_name(chat_id, target_id)
+        tname = await resolve_name_link(chat_id, target_id)
         await message.reply(f"✅ Последнее предупреждение снято с {tname}.")
     else:
         await message.reply("❌ Нет активных предупреждений.")
@@ -158,7 +158,7 @@ async def remove_warns_handler(message: Message):
             return
         await db.clear_warns(chat_id, target_id)
         await db.add_moderator_log(chat_id, user_id, "unwarn", target_id, "все сняты")
-        tname = await resolve_name(chat_id, target_id)
+        tname = await resolve_name_link(chat_id, target_id)
         await message.reply(f"✅ Все предупреждения сняты с {tname}.")
         return
 

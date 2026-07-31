@@ -10,7 +10,7 @@ from bot import bot, logger
 from db import db
 from utils import esc, name_link
 from utils.mentions import extract_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 from .common import RANK_NAMES, check_rank, get_min_rank, parse_cmd_rank, call_plugin_hooks
 
 router = Router()
@@ -199,7 +199,7 @@ async def staff_list_handler(message: Message):
         return
     lines = ["👥 <b>Состав модерации:</b>\n"]
     for mid, rnk, ab, aa in mods:
-        name = await resolve_name(chat_id, mid)
+        name = await resolve_name_link(chat_id, mid)
         rname = rank_names.get(str(rnk), RANK_NAMES.get(rnk, f"Ранг {rnk}"))
         lines.append(f"• {name} — {rname}")
     await message.reply("\n".join(lines))
@@ -223,7 +223,7 @@ async def who_assigned_handler(message: Message):
         row = await cursor.fetchone()
     if row:
         ts = time.strftime("%d.%m.%Y %H:%M", time.localtime(row[1]))
-        aname = await resolve_name(chat_id, row[0])
+        aname = await resolve_name_link(chat_id, row[0])
         await message.reply(f"👤 Назначен: {aname}\n📅 {ts}")
     else:
         await message.reply("Пользователь не является модератором.")
@@ -268,7 +268,7 @@ async def user_log_handler(message: Message):
     if not logs:
         await message.reply("Нет записей.")
         return
-    tname = await resolve_name(chat_id, target_id)
+    tname = await resolve_name_link(chat_id, target_id)
     lines = [f"📋 <b>Лог для {tname}:</b>\n"]
     for row in logs[-10:]:
         ts = time.strftime("%d.%m %H:%M", time.localtime(row[6]))
