@@ -15,7 +15,7 @@ from bot import bot, logger
 from db import db
 from utils import esc, name_link
 from utils.mentions import extract_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 
 def _city_wiki_link(city: str) -> str:
     return "https://ru.wikipedia.org/wiki/" + urllib.parse.quote(city.replace(" ", "_"))
@@ -320,7 +320,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             row = await cursor.fetchone()
         if row and row[0]:
             dt = time.strftime("%d.%m.%Y %H:%M", time.localtime(row[0]))
-            tname = await resolve_name(chat_id, target)
+            tname = await resolve_name_link(chat_id, target)
             await message.reply(f"📅 Регистрация {tname}: {dt}")
         else:
             await message.reply("📅 Пользователь не найден в системе.")
@@ -338,13 +338,13 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target,)
             )
             rows = await cursor.fetchall()
-        tn = await resolve_name(chat_id, target)
+        tn = await resolve_name_link(chat_id, target)
         if not rows:
             await message.reply(f"У {tn} пока нет подписчиков.")
             return True
         names = []
         for (sid,) in rows:
-            names.append(await resolve_name(chat_id, sid))
+            names.append(await resolve_name_link(chat_id, sid))
         await message.reply(f"📋 <b>Подписки {tn}:</b>\n" + ", ".join(names))
         return True
 
@@ -360,7 +360,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         names = []
         for (sid,) in rows:
-            names.append(await resolve_name(chat_id, sid))
+            names.append(await resolve_name_link(chat_id, sid))
         await message.reply(f"📋 <b>Ваши подписчики:</b>\n" + ", ".join(names))
         return True
 
@@ -376,7 +376,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         names = []
         for (tid,) in rows:
-            names.append(await resolve_name(chat_id, tid))
+            names.append(await resolve_name_link(chat_id, tid))
         await message.reply(f"📋 <b>Ваши подписки:</b>\n" + ", ".join(names))
         return True
 
@@ -394,7 +394,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         lines = ["📊 <b>Сабы чата:</b>\n"]
         for i, (uid, cnt) in enumerate(rows, 1):
-            nm = await resolve_name(chat_id, uid)
+            nm = await resolve_name_link(chat_id, uid)
             lines.append(f"{i}. {nm} — {cnt}")
         await message.reply("\n".join(lines))
         return True
@@ -411,7 +411,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         lines = ["🌍 <b>Все сабы Вселенной:</b>\n"]
         for i, (uid, cnt) in enumerate(rows, 1):
-            nm = await resolve_name(chat_id, uid)
+            nm = await resolve_name_link(chat_id, uid)
             lines.append(f"{i}. {nm} — {cnt} подписчиков")
         await message.reply("\n".join(lines))
         return True
@@ -462,7 +462,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (user_id, target, int(time.time()))
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Вы подписались на пользователя {tname}.")
         return True
 
@@ -478,7 +478,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (user_id, target)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Вы отписались от пользователя {tname}.")
         return True
 
@@ -509,7 +509,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             if row and not row[0]:
                 await message.reply("🔒 Пользователь скрыл свои награды.")
                 return True
-        tn = await resolve_name(chat_id, target)
+        tn = await resolve_name_link(chat_id, target)
         medals_text = await _format_medals(chat_id, target)
         if not medals_text:
             await message.reply(f"У {tn} пока нет наград.")
@@ -558,7 +558,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
             return True
         names = []
         for (uid,) in rows:
-            names.append(await resolve_name(chat_id, uid))
+            names.append(await resolve_name_link(chat_id, uid))
         await message.reply(f"🏡 <b>Граждане чата:</b>\n" + ", ".join(names))
         return True
 
@@ -580,7 +580,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target,)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Описание пользователя {tname} удалено.")
         return True
 
@@ -611,7 +611,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target, descr_text, descr_text)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Описание пользователя {tname} обновлено.")
         return True
 
@@ -667,7 +667,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (target,)
             )
             row = await cursor.fetchone()
-        tn = await resolve_name(chat_id, target)
+        tn = await resolve_name_link(chat_id, target)
         descr = row[0] if row and row[0] else "Описание не задано."
         await message.reply(f"📝 <b>Описание {tn}:</b>\n{esc(descr[:500])}")
         return True
@@ -777,7 +777,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             row = await cursor.fetchone()
-        tn = await resolve_name(chat_id, target)
+        tn = await resolve_name_link(chat_id, target)
         nick = row[0] if row and row[0] else "не установлен"
         await message.reply(f"👤 <b>Ник {tn}:</b> {esc(nick)}")
         return True
@@ -813,7 +813,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target, nick, nick)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Ник {tname} установлен: {esc(nick)}")
         return True
 
@@ -835,7 +835,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Ник {tname} удалён.")
         return True
 
@@ -887,7 +887,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             row = await cursor.fetchone()
-        tn = await resolve_name(chat_id, target)
+        tn = await resolve_name_link(chat_id, target)
         t = row[0] if row and row[0] else "не установлено"
         await message.reply(f"🎖️ <b>Звание {tn}:</b> {esc(t)}")
         return True
@@ -918,7 +918,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target, title, title)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Звание {tname} установлено: {esc(title)}")
         return True
 
@@ -940,7 +940,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (chat_id, target)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Звание {tname} удалено.")
         return True
 
@@ -1340,14 +1340,15 @@ async def _show_card(message: Message, chat_id: int, target_id: int, viewer_id: 
         name = message.from_user.first_name or "Пользователь"
         username = message.from_user.username
     else:
-        name = await resolve_name(chat_id, target_id)
         username = None
         try:
             cm = await bot.get_chat_member(chat_id, target_id)
             if cm and cm.user:
+                name = cm.user.first_name or cm.user.username or "Пользователь"
                 username = cm.user.username
         except Exception as e:
             logger.warning(f"Username fetch failed: {e}")
+            name = "Пользователь"
 
     today = int(time.strftime("%Y%m%d"))
     day = sum(v for d, v in activity_rows if d == today)

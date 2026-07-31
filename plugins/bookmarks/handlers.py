@@ -8,7 +8,7 @@ from aiogram.types import Message
 from db import db
 from utils import esc
 from utils.mentions import extract_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 
 ADD_BOOKMARK_CMD = re.compile(r'^\+закладка\s+', re.IGNORECASE)
 SHOW_BOOKMARK_CMD = re.compile(r'^закладка\s+(\d+)$', re.IGNORECASE)
@@ -113,7 +113,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
             rows = await cursor.fetchall()
             if num <= len(rows):
                 title, content, owner_id, msg_id, created_at = rows[num - 1]
-                owner_name = await resolve_name(chat_id, owner_id)
+                owner_name = await resolve_name_link(chat_id, owner_id)
                 d = time.strftime("%d.%m.%Y", time.localtime(created_at))
                 link = ""
                 if msg_id:
@@ -157,7 +157,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
         total_pages = max(1, (total + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
         lines = [f"📖 <b>Чатбук</b> (стр. {page}/{total_pages}):\n"]
         for i, (title, owner_id, created_at) in enumerate(rows, offset + 1):
-            oname = await resolve_name(chat_id, owner_id)
+            oname = await resolve_name_link(chat_id, owner_id)
             lines.append(f"{i}. <b>{esc(title)}</b> — {oname}")
         await message.reply("\n".join(lines))
         return True
@@ -220,7 +220,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
                 (chat_id, target)
             )
             total = (await cursor2.fetchone())[0]
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         if not rows:
             await message.reply(f"У {tname} нет закладок.")
             return True
@@ -252,7 +252,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
                 (chat_id, target)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Закладки пользователя {tname} возвращены в чатбук.")
         return True
 
@@ -276,7 +276,7 @@ async def handle_bookmark_commands(message: Message, chat_id: int, user_id: int,
                 (chat_id, target)
             )
             await conn.commit()
-        tname = await resolve_name(chat_id, target)
+        tname = await resolve_name_link(chat_id, target)
         await message.reply(f"✅ Закладки пользователя {tname} скрыты из чатбука.")
         return True
 

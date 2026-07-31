@@ -8,7 +8,7 @@ from aiogram.types import Message
 from db import db
 from utils import esc, format_duration
 from utils.mentions import extract_user
-from utils.user_name import resolve_name
+from utils.user_name import resolve_name_link
 from .criminal_data import CRIMINAL_ARTICLES
 from .sins_data import SINS
 from .addictions_data import ADDICTIONS
@@ -76,9 +76,9 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
         lines = ["🌐 <b>Общий пейринг:</b>\n"]
         for u1, u2, sid, ts in rows:
             d = time.strftime("%d.%m", time.localtime(ts))
-            n1 = await resolve_name(chat_id, u1)
-            n2 = await resolve_name(chat_id, u2)
-            ns = await resolve_name(chat_id, sid)
+            n1 = await resolve_name_link(chat_id, u1)
+            n2 = await resolve_name_link(chat_id, u2)
+            ns = await resolve_name_link(chat_id, sid)
             lines.append(f"• {n1} + {n2} (от {ns}, {d})")
         await message.reply("\n".join(lines))
         return True
@@ -96,9 +96,9 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
         lines = ["💞 <b>Пейринг чата:</b>\n"]
         for u1, u2, sid, ts in rows:
             d = time.strftime("%d.%m", time.localtime(ts))
-            n1 = await resolve_name(chat_id, u1)
-            n2 = await resolve_name(chat_id, u2)
-            ns = await resolve_name(chat_id, sid)
+            n1 = await resolve_name_link(chat_id, u1)
+            n2 = await resolve_name_link(chat_id, u2)
+            ns = await resolve_name_link(chat_id, sid)
             lines.append(f"• {n1} + {n2} (от {ns}, {d})")
         await message.reply("\n".join(lines))
         return True
@@ -136,7 +136,7 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
                     (chat_id, uid)
                 )
                 if await cursor.fetchone():
-                    uname = await resolve_name(chat_id, uid)
+                    uname = await resolve_name_link(chat_id, uid)
                     await message.reply(f"❌ Пользователь {uname} исключил себя из шипперинга.")
                     return True
 
@@ -147,8 +147,8 @@ async def handle_shipping(message: Message, chat_id: int, user_id: int, text: st
             )
             await conn.commit()
 
-        n1 = await resolve_name(chat_id, user1)
-        n2 = await resolve_name(chat_id, user2)
+        n1 = await resolve_name_link(chat_id, user1)
+        n2 = await resolve_name_link(chat_id, user2)
 
         await message.reply(f"💞 {n1} + {n2} = ❤️ Шипперинг состоялся!")
         return True
@@ -255,7 +255,7 @@ async def handle_text_games(message: Message, chat_id: int, user_id: int, text: 
             )
             row = await cursor.fetchone()
         if row:
-            name = await resolve_name(chat_id, row[0])
+            name = await resolve_name_link(chat_id, row[0])
             await message.reply(f"👤 {esc(question)} — это <b>{name}</b>")
         else:
             await message.reply(f"👤 {esc(question)} — это <b>никто</b>")
