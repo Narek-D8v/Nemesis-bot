@@ -1,7 +1,10 @@
 import copy
 import json
 import time
+import logging
 import aiosqlite
+
+logger = logging.getLogger(__name__)
 
 DB_PATH = "moderator_bot.db"
 

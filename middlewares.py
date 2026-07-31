@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Callable, Dict, Any, Awaitable
 
 from aiogram import BaseMiddleware
-from aiogram.types import Message, TelegramObject
+from aiogram.types import Message, TelegramObject, ChatPermissions
 from aiogram.enums import ChatType
 
 from bot import bot, logger
@@ -175,7 +175,7 @@ class NightModeMiddleware(BaseMiddleware):
             try:
                 await event.chat.restrict(
                     user_id,
-                    can_send_messages=False,
+                    permissions=ChatPermissions(can_send_messages=False),
                     until_date=until_date,
                 )
                 await db.add_log(chat_id, user_id, "mute", "Ночной режим")

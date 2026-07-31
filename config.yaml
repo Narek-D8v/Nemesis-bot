@@ -5,28 +5,6 @@ plugins:
     settings:
       greeting: "Привет, мир!"
 
-  moderation:
-    enabled: true
-    version: 1.0.0
-    settings:
-      auto_mute_after_warns: 3
-      warn_expire_days: 30
-
-  antispam:
-    enabled: true
-    version: 1.0.0
-    settings:
-      bayes_enabled: true
-      bayes_threshold: 0.7
-      antispam_threshold: 5
-
-  premium:
-    enabled: true
-    version: 1.0.0
-    settings:
-      personal_stars: 10
-      group_stars: 5
-
   fun:
     enabled: true
     version: 1.0.0
@@ -96,7 +74,7 @@ plugins:
       daily_limit: 20
       context_size: 20
 
-  group_tools:
+  grouptools:
     enabled: true
     version: 1.0.0
     settings: {}

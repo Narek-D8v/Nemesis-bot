@@ -1,4 +1,5 @@
 import asyncio
+import html
 import json
 import re
 import time
@@ -196,7 +197,7 @@ async def _handle_rules(message: Message, chat_id: int, user_id: int, text: str)
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
                 "INSERT OR REPLACE INTO group_rules (chat_id, text, entities_json) VALUES (?, '', '')",
-                (chat_id,)
+                (chat_id, '', '')
             )
             await conn.commit()
         settings = await db.get_settings(chat_id)
@@ -318,6 +319,7 @@ async def _handle_autokick(message: Message, chat_id: int, user_id: int, text: s
             settings["autokick_on_exit"] = True
             settings["autokick_exit_count"] = count
             settings["autokick_exit_time"] = minutes
+            settings["autokick_exit_action"] = action
             settings["autokick_action"] = action
             await db.save_settings(chat_id, settings)
             await message.reply(
@@ -327,6 +329,7 @@ async def _handle_autokick(message: Message, chat_id: int, user_id: int, text: s
             settings["autokick_on_exit"] = True
             settings["autokick_exit_count"] = 3
             settings["autokick_exit_time"] = 60
+            settings["autokick_exit_action"] = "kick"
             settings["autokick_action"] = "kick"
             await db.save_settings(chat_id, settings)
             await message.reply(

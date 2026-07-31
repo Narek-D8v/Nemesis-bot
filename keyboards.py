@@ -16,6 +16,56 @@ def main_menu():
         InlineKeyboardButton(text="📋 Логи", callback_data="menu:logs"),
         InlineKeyboardButton(text="👥 Админы", callback_data="menu:admins")
     )
+    b.row(
+        InlineKeyboardButton(text="🛠 Инструменты", callback_data="menu:group_tools"),
+        InlineKeyboardButton(text="👤 Профиль", callback_data="menu:profile")
+    )
+    return b.as_markup()
+
+
+def profile_edit_menu(target_id: int):
+    b = InlineKeyboardBuilder()
+    b.row(
+        InlineKeyboardButton(text="⚤ Пол", callback_data=f"pr:field:gender:{target_id}"),
+        InlineKeyboardButton(text="🏙️ Город", callback_data=f"pr:field:city:{target_id}"),
+    )
+    b.row(
+        InlineKeyboardButton(text="🎂 День рождения", callback_data=f"pr:field:bday:{target_id}"),
+        InlineKeyboardButton(text="👁 Видимость ДР", callback_data=f"pr:bdayvis:{target_id}"),
+    )
+    b.row(
+        InlineKeyboardButton(text="💬 Девиз", callback_data=f"pr:field:motto:{target_id}"),
+        InlineKeyboardButton(text="📝 Описание", callback_data=f"pr:field:descr:{target_id}"),
+    )
+    b.row(
+        InlineKeyboardButton(text="📛 Ник", callback_data=f"pr:field:nick:{target_id}"),
+        InlineKeyboardButton(text="🎖️ Звание", callback_data=f"pr:field:title:{target_id}"),
+    )
+    b.row(InlineKeyboardButton(text="🔙 Назад", callback_data=f"pr:back:{target_id}"))
+    return b.as_markup()
+
+
+def profile_bdayvis_menu(target_id: int):
+    b = InlineKeyboardBuilder()
+    b.row(
+        InlineKeyboardButton(text="🗓 Полностью", callback_data=f"pr:bdayvis_set:full:{target_id}"),
+        InlineKeyboardButton(text="🗓 Месяц и год", callback_data=f"pr:bdayvis_set:month:{target_id}"),
+    )
+    b.row(
+        InlineKeyboardButton(text="🗓 Только год", callback_data=f"pr:bdayvis_set:year:{target_id}"),
+        InlineKeyboardButton(text="🔙 Назад", callback_data=f"pr:edit:{target_id}"),
+    )
+    return b.as_markup()
+
+
+def profile_activity_menu(target_id: int):
+    b = InlineKeyboardBuilder()
+    b.row(
+        InlineKeyboardButton(text="7 дней", callback_data=f"pr:activity:7:{target_id}"),
+        InlineKeyboardButton(text="14 дней", callback_data=f"pr:activity:14:{target_id}"),
+        InlineKeyboardButton(text="30 дней", callback_data=f"pr:activity:30:{target_id}"),
+    )
+    b.row(InlineKeyboardButton(text="🔙 Назад", callback_data=f"pr:back:{target_id}"))
     return b.as_markup()
 
 
@@ -414,6 +464,69 @@ def daily_rules_menu(settings: dict):
     b.row(
         InlineKeyboardButton(text="✏️ Изменить текст", callback_data="dr:edit"),
         InlineKeyboardButton(text="🔙 Назад", callback_data="menu:admins")
+    )
+    return b.as_markup()
+
+
+async def group_tools_menu(settings: dict, chat_id: int = 0):
+    import aiosqlite
+    from db import db
+
+    b = InlineKeyboardBuilder()
+
+    rules = settings.get("daily_rules", {})
+    rules_status = "✅ Вкл" if rules.get("enabled") else "❌ Выкл"
+    b.row(
+        InlineKeyboardButton(
+            text=f"📋 Правила (автопостинг) {rules_status}",
+            callback_data="gt:rules_toggle"
+        )
+    )
+    b.row(
+        InlineKeyboardButton(text=f"⏰ Время: {rules.get('time', '09:00')}", callback_data="gt:rules_time"),
+        InlineKeyboardButton(text="✏️ Текст правил", callback_data="gt:rules_edit")
+    )
+
+    join_leave = settings.get("show_join_leave", True)
+    autokick = settings.get("autokick_on_exit", False)
+    b.row(
+        InlineKeyboardButton(text=f"🚪 Входы/Выходы {'✅' if join_leave else '❌'}", callback_data="gt:join_leave"),
+        InlineKeyboardButton(text=f"👢 Автокик {'✅' if autokick else '❌'}", callback_data="gt:autokick")
+    )
+
+    silent_days = settings.get("autokick_silent_days")
+    silent_label = f"{silent_days}д" if silent_days else "❌"
+    autojoin = False
+    if chat_id:
+        try:
+            async with aiosqlite.connect(db.db_path) as conn:
+                cursor = await conn.execute(
+                    "SELECT enabled FROM auto_join_requests WHERE chat_id = ?", (chat_id,)
+                )
+                row = await cursor.fetchone()
+                autojoin = bool(row and row[0])
+        except Exception:
+            pass
+    b.row(
+        InlineKeyboardButton(text=f"👢 Молчуны {silent_label}", callback_data="gt:autokick_silent"),
+        InlineKeyboardButton(text=f"📥 Автозаявки {'✅' if autojoin else '❌'}", callback_data="gt:autojoin")
+    )
+
+    channels = settings.get("block_channels", False)
+    minreg = settings.get("min_account_age_days", 0)
+    b.row(
+        InlineKeyboardButton(text=f"📡 Каналы {'✅' if not channels else '❌'}", callback_data="gt:channels"),
+        InlineKeyboardButton(text=f"📅 Минрег {minreg}дн", callback_data="gt:minreg")
+    )
+
+    b.row(
+        InlineKeyboardButton(text="🔓 Открыть чат", callback_data="gt:chat_open"),
+        InlineKeyboardButton(text="🔒 Закрыть чат", callback_data="gt:chat_close")
+    )
+
+    b.row(
+        InlineKeyboardButton(text="❓ Команды", callback_data="gt:help"),
+        InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main")
     )
     return b.as_markup()
 

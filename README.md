@@ -112,6 +112,7 @@ python main.py
 | `BOT_TOKEN` | ✅ | Токен от @BotFather |
 | `ADMIN_ID` | ✅ | Telegram ID владельца |
 | `VIRUSTOTAL_API_KEY` | ❌ | API ключ VirusTotal |
+| `OPENROUTER_API_KEY` | ❌ | API ключ OpenRouter (AI-чат) |
 | `PORT` | ❌ | Порт для health check (по умолч. 8080) |
 
 ---
