@@ -47,12 +47,12 @@ class BayesClassifier:
         self._seeded = True
         async with aiosqlite.connect(self.db_path) as conn:
             cursor = await conn.execute(
-                "SELECT COUNT(*) FROM bayes_counts WHERE model_name = ?",
+                "SELECT spam_total, ham_total FROM bayes_counts WHERE model_name = ?",
                 (self.model_name,)
             )
             row = await cursor.fetchone()
-            if row and row[0] > 0:
-                return
+        if row and row[0] > 0 and row[1] > 0:
+            return
         await self._ensure_counts_row()
         for text in SEED_SPAM:
             await self.train(text, is_spam=True)
@@ -160,8 +160,8 @@ class BayesClassifier:
 
         alpha = 1.0
 
-        log_spam = math.log(self.spam_total / total)
-        log_ham = math.log(self.ham_total / total)
+        log_spam = math.log(self.spam_total / total) if self.spam_total > 0 else math.log(0.5)
+        log_ham = math.log(self.ham_total / total) if self.ham_total > 0 else math.log(0.5)
 
         for token in unique_tokens:
             if token in word_data:

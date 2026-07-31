@@ -174,6 +174,7 @@ class Database:
                     chat_id INTEGER,
                     message_id INTEGER,
                     timestamp INTEGER,
+                    answer INTEGER DEFAULT NULL,
                     PRIMARY KEY (user_id, chat_id)
                 );
                 CREATE TABLE IF NOT EXISTS bayes_stats (
@@ -323,6 +324,15 @@ class Database:
                 );
             """)
             await db.commit()
+            await self._migrate_captcha_answer(db)
+
+    @staticmethod
+    async def _migrate_captcha_answer(conn):
+        cursor = await conn.execute("PRAGMA table_info(captcha_pending)")
+        existing = {row[1] for row in await cursor.fetchall()}
+        if "answer" not in existing:
+            await conn.execute("ALTER TABLE captcha_pending ADD COLUMN answer INTEGER DEFAULT NULL")
+            await conn.commit()
 
     async def get_settings(self, chat_id: int) -> dict:
         async with aiosqlite.connect(self.db_path) as db:

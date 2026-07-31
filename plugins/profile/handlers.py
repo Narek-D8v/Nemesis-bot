@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 import os
 import re
 import tempfile
@@ -14,6 +15,16 @@ from db import db
 from utils import esc
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
+
+CITIES_BASE_URL = "https://iris-tg.ru/cities/{}"
+_CITY_INDEX: dict[str, dict] = {}
+try:
+    _cities_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cities.json")
+    with open(_cities_path, encoding="utf-8") as _f:
+        for _c in json.load(_f):
+            _CITY_INDEX[_c["name"].lower()] = _c
+except Exception as e:
+    logger.warning(f"Cities database failed to load: {e}")
 
 ANKETA_CMD = re.compile(r'^(моя\s+)?анкета\b', re.IGNORECASE)
 TOGGLE_ANKETA = re.compile(r'^[+-]анкета\b', re.IGNORECASE)
@@ -106,6 +117,106 @@ def _normalize_vis(vis: str | None) -> str:
     if vis.lower() in ("все", "всё"):
         return "full"
     return vis.lower()
+
+
+def _resolve_city(raw: str):
+    key = re.sub(r"\s+", " ", raw.strip().lower())
+    if not key:
+        return None
+    if key in _CITY_INDEX:
+        c = _CITY_INDEX[key]
+        return c["name"], c["id"]
+    matches = [c for name, c in _CITY_INDEX.items() if name.startswith(key)]
+    if len(matches) == 1:
+        c = matches[0]
+        return c["name"], c["id"]
+    return None
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    n = abs(n) % 100
+    n1 = n % 10
+    if 10 < n < 20:
+        return many
+    if 1 < n1 < 5:
+        return few
+    if n1 == 1:
+        return one
+    return many
+
+
+def _kfmt(n: int) -> str:
+    if n >= 1000:
+        s = f"{n / 1000:.1f}k".replace(".", ",")
+        return s[:-3] + "k" if s.endswith(",0k") else s
+    return str(n)
+
+
+def _age_str(bday: str) -> str:
+    try:
+        d = datetime.strptime(bday, "%d.%m.%Y").date()
+    except ValueError:
+        return ""
+    today = datetime.now().date()
+    age = today.year - d.year - ((today.month, today.day) < (d.month, d.day))
+    if age < 0:
+        age = 0
+    return f"({age} {_plural(age, 'год', 'года', 'лет')})"
+
+
+def _duration_str(reg_ts: int) -> str:
+    reg = datetime.fromtimestamp(reg_ts)
+    now = datetime.now()
+    months = (now.year - reg.year) * 12 + (now.month - reg.month)
+    if now.day < reg.day:
+        months -= 1
+    if months < 0:
+        months = 0
+    m_total = reg.month - 1 + months
+    anchor = datetime(reg.year + m_total // 12, m_total % 12 + 1, min(reg.day, 28))
+    days = (now.date() - anchor.date()).days
+    parts = []
+    if months:
+        parts.append(f"{months} {_plural(months, 'месяц', 'месяца', 'месяцев')}")
+    if days:
+        parts.append(f"{days} {_plural(days, 'день', 'дня', 'дней')}")
+    return " ".join(parts) or "0 дней"
+
+
+def _last_seen_str(ts: int) -> str:
+    if not ts:
+        return ""
+    d = int(time.time()) - ts
+    if d < 300:
+        return "был только что"
+    if d < 3600:
+        return "был недавно"
+    if d < 86400:
+        return "был сегодня"
+    if d < 172800:
+        return "был вчера"
+    if d < 604800:
+        return f"был {d // 86400} дн. назад"
+    return "был давно"
+
+
+STAR_LEVELS = [
+    (0, "🙂", "Ноунейм"),
+    (5, "🌱", "Новичок"),
+    (15, "🤝", "Знакомый"),
+    (30, "😎", "Свой"),
+    (60, "🔥", "Продвинутый"),
+    (120, "💎", "Легенда"),
+    (300, "👑", "Бог Вселенной"),
+]
+
+
+def _star_level(stars: int):
+    emoji, name = STAR_LEVELS[0][1], STAR_LEVELS[0][2]
+    for limit, e, n in STAR_LEVELS:
+        if stars >= limit:
+            emoji, name = e, n
+    return emoji, name
 
 
 def _medal_maps():
@@ -902,10 +1013,15 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
 
     m = MY_CITY.match(stripped)
     if m:
-        city = m.group(1).strip()
-        if len(city) > CITY_MAX:
+        raw = m.group(1).strip()
+        if len(raw) > CITY_MAX:
             await message.reply(f"❌ Город слишком длинный (макс. {CITY_MAX} символов).")
             return True
+        found = _resolve_city(raw)
+        if not found:
+            await message.reply(f"❌ Город «{esc(raw)}» не найден в базе. Проверьте название или напишите город полностью.")
+            return True
+        city, city_id = found
         async with aiosqlite.connect(db.db_path) as conn:
             await conn.execute(
                 "INSERT INTO profile_global (user_id, city) VALUES (?, ?) "
@@ -913,7 +1029,7 @@ async def handle_profile_commands(message: Message, chat_id: int, user_id: int, 
                 (user_id, city, city)
             )
             await conn.commit()
-        await message.reply(f"✅ Город установлен: {esc(city)}")
+        await message.reply(f"✅ Город установлен: {esc(city)} ({CITIES_BASE_URL.format(city_id)})")
         return True
 
     if RM_CITY.match(stripped):
@@ -993,50 +1109,58 @@ try:
 except ImportError:
     _HAS_MPL = False
 
-_CHART_BG = "#1a1a2e"
-_CHART_TEXT = "#e0e0e0"
-_CHART_BAR = "#e94560"
-_CHART_BAR_DIM = "#3a3a5e"
-
-
 def _fmt_day(d: int) -> str:
     return f"{d % 100:02d}.{(d // 100) % 100:02d}"
-
-
-def _interp(c1: str, c2: str, t: float) -> str:
-    r1, g1, b1 = int(c1[1:3], 16), int(c1[3:5], 16), int(c1[5:7], 16)
-    r2, g2, b2 = int(c2[1:3], 16), int(c2[3:5], 16), int(c2[5:7], 16)
-    return (
-        f"#{int(r1 + (r2 - r1) * t):02x}"
-        f"{int(g1 + (g2 - g1) * t):02x}"
-        f"{int(b1 + (b2 - b1) * t):02x}"
-    )
 
 
 def _make_activity_chart(data: list[tuple[int, int]], days: int = 14) -> bytes | None:
     if not _HAS_MPL or len(data) < 2:
         return None
+    import numpy as np
+    from matplotlib.colors import LinearSegmentedColormap
+    from matplotlib.patches import FancyBboxPatch
+
     days_lbl = [_fmt_day(d) for d, _ in data]
     values = [v for _, v in data]
     max_v = max(values) or 1
     today_idx = len(data) - 1
+    width = 0.6
+    top = max_v * 1.4 + 1
 
-    colors = [
-        _CHART_BAR if i == today_idx else _interp(_CHART_BAR_DIM, _CHART_BAR, values[i] / max_v)
-        for i in range(len(values))
-    ]
+    fig, ax = plt.subplots(figsize=(max(6.0, days * 0.42), 3.4))
+    fig.patch.set_facecolor("#ffffff")
 
-    fig, ax = plt.subplots(figsize=(max(6.0, days * 0.42), 3.6))
-    fig.patch.set_facecolor(_CHART_BG)
-    ax.set_facecolor(_CHART_BG)
-    ax.bar(range(len(values)), values, color=colors, width=0.65, edgecolor="none")
+    bg_cmap = LinearSegmentedColormap.from_list("bg", ["#ffffff", "#e6edff"])
+    ax.imshow(
+        np.linspace(1, 0, 256)[:, None],
+        extent=(-0.7, len(values) - 0.3, 0, top),
+        aspect="auto", cmap=bg_cmap, zorder=0,
+    )
+
+    bar_cmap = LinearSegmentedColormap.from_list("bars", ["#5b8cff", "#9d7bff", "#ff7bd0"])
+    for i, v in enumerate(values):
+        if v <= 0:
+            continue
+        color = "#22c55e" if i == today_idx else bar_cmap(v / max_v)
+        rounding = min(width * 0.4, max(v * 0.12, 0.04))
+        patch = FancyBboxPatch(
+            (i - width / 2, 0), width, v,
+            boxstyle=f"round,pad=0,rounding_size={rounding}",
+            fc=color, ec="white", lw=0.8, zorder=3,
+        )
+        ax.add_patch(patch)
+        ax.text(
+            i, v + top * 0.03, str(v),
+            ha="center", va="bottom", fontsize=6.5, fontweight="bold",
+            color="#334155", zorder=4,
+        )
 
     avg = sum(values) / len(values)
     if avg > 0:
-        ax.axhline(avg, color=_CHART_TEXT, linestyle="--", linewidth=1, alpha=0.5)
+        ax.axhline(avg, color="#94a3b8", linestyle=(0, (4, 3)), linewidth=1, alpha=0.9, zorder=2)
         ax.text(
-            len(values) - 0.3, avg + max_v * 0.02,
-            f"среднее: {avg:.1f}", fontsize=7, color=_CHART_TEXT, va="bottom", ha="right"
+            len(values) - 0.3, avg + top * 0.05,
+            f"среднее {avg:.0f}", fontsize=6.5, color="#64748b", ha="right", va="bottom", zorder=4,
         )
 
     tick_positions = list(range(len(days_lbl)))
@@ -1045,85 +1169,95 @@ def _make_activity_chart(data: list[tuple[int, int]], days: int = 14) -> bytes |
         tick_positions = [i for i in range(len(days_lbl)) if i % 2 == 0]
         tick_labels = [days_lbl[i] for i in tick_positions]
     ax.set_xticks(tick_positions)
-    ax.set_xticklabels(tick_labels, fontsize=7, color=_CHART_TEXT, rotation=45, ha="right")
+    ax.set_xticklabels(tick_labels, fontsize=7, color="#64748b", rotation=45, ha="right")
+    for lab in ax.get_xticklabels():
+        if lab.get_text() == days_lbl[today_idx]:
+            lab.set_color("#16a34a")
+            lab.set_fontweight("bold")
 
-    for i, v in enumerate(values):
-        if v > 0:
-            ax.text(i, v + max_v * 0.02, str(v), fontsize=6, color=_CHART_TEXT, ha="center", va="bottom")
-
-    ax.set_ylabel("Сообщений", fontsize=7, color=_CHART_TEXT)
-    ax.tick_params(axis="y", colors=_CHART_TEXT, labelsize=7)
+    ax.set_ylim(0, top)
+    ax.set_xlim(-0.7, len(values) - 0.3)
     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
-    ax.yaxis.grid(True, alpha=0.15, color=_CHART_TEXT)
+    ax.tick_params(axis="y", colors="#64748b", labelsize=7)
+    ax.yaxis.grid(True, color="#d8e2f8", linewidth=0.8, alpha=0.7, zorder=1)
     ax.set_axisbelow(True)
-    ax.set_xlim(-0.6, len(values) - 0.4)
     for spine in ax.spines.values():
         spine.set_visible(False)
     plt.subplots_adjust(bottom=0.3)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=130, bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(buf, format="png", dpi=140, bbox_inches="tight", facecolor="#ffffff")
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
 
-def _bar(value: int, max_val: int = 100, size: int = 10) -> str:
-    filled = min(int(value / max(max_val, 1) * size), size)
-    return "█" * filled + "░" * (size - filled)
 
-def _card_caption(name: str, target_id: int, pcr, pgr, repr_, subs: int, warns: int, awards: int, mcnt: int) -> str:
-    lines = [f"👤 <b>{name}</b>  <code>{target_id}</code>"]
+async def _make_activity_chart_bytes(target_id: int, days: int = 14) -> bytes | None:
+    activity = await db.get_daily_activity(target_id, days)
+    act = dict(activity or [])
+    now_ts = int(time.time())
+    days_full = []
+    for i in range(days - 1, -1, -1):
+        d = int(time.strftime("%Y%m%d", time.localtime(now_ts - i * 86400)))
+        days_full.append((d, act.get(d, 0)))
+    if sum(v for _, v in days_full) == 0:
+        return None
+    try:
+        return await asyncio.to_thread(_make_activity_chart, days_full, days)
+    except Exception as e:
+        logger.warning(f"Chart generation failed: {e}")
+        return None
 
-    if pcr:
-        info = []
-        if pcr[0]:
-            info.append(f"📛 {esc(pcr[0])}")
-        if pcr[1]:
-            info.append(f"🎖️ {esc(pcr[1])}")
-        if pcr[2]:
-            info.append("🏡 Гражданин")
-        if info:
-            lines.append(" | ".join(info))
+def _card_caption(name: str, username: str | None, target_id: int, pgr, last_seen: int, act: tuple, stars: int) -> str:
+    if username:
+        name_html = f'<a href="https://t.me/{esc(username)}">{esc(name)}</a>'
+    else:
+        name_html = esc(name)
+    seen = _last_seen_str(last_seen)
+    lines = [f"👤 Это {name_html}{f' ({seen})' if seen else ''}"]
+    lines.append(f"🆔 @{target_id}")
+    lines.append("")
 
-    if pgr:
-        info2 = []
-        if pgr[0]:
-            info2.append(f"⚤ {esc(pgr[0])}")
-        if pgr[1]:
-            info2.append(f"🏙️ {esc(pgr[1])}")
-        bday_raw = pgr[2]
-        bday_vis = _normalize_vis(pgr[3])
-        if bday_raw:
-            if bday_vis == 'full':
-                info2.append(f"🎂 {bday_raw}")
-            elif bday_vis == 'месяц':
-                info2.append(f"🎂 {'.'.join(bday_raw.split('.')[1:])}")
-            elif bday_vis == 'год':
-                info2.append(f"🎂 {bday_raw.split('.')[-1]}")
-        if info2:
-            lines.append(" | ".join(info2))
-        descr = pgr[4]
-        if descr:
-            lines.append(f"📝 {esc(descr[:300])}{'…' if len(descr) > 300 else ''}")
-        motto = pgr[5]
-        if motto:
-            lines.append(f"💬 «{esc(motto)}»")
-        reg = pgr[7]
-        if reg:
-            dt = time.strftime("%d.%m.%Y", time.localtime(reg))
-            delta = int(time.time()) - reg
-            months = delta // (86400 * 30)
-            days = (delta % (86400 * 30)) // 86400
-            dur = f"{months} мес {days} дн" if months else f"{days} дн"
-            lines.append(f"⏱️ Во вселенной Немесис: <b>с {dt}</b> ({dur})")
+    reg = pgr[7] if pgr else 0
+    if reg:
+        dt = time.strftime("%d.%m.%Y", time.localtime(reg))
+        lines.append(f"⏱️ Во вселенной Немесиса: <b>с {dt}</b> ({_duration_str(reg)})")
 
-    rating = repr_[0] if repr_ else 0
-    stars = repr_[1] if repr_ else 0
-    lines.append("📊 <b>Статистика</b>")
-    lines.append(f"⭐ Рейтинг: {rating}  {_bar(rating, max(rating, 100))}")
-    lines.append(f"🌟 Звёзды: {stars}  {_bar(stars, max(stars, 20))}")
-    tail = f"👥 Подписчики: {subs}  |  ⚠️ Варны: {warns}  |  🎖️ Награды: {awards}"
-    tail += f"  |  💬 Сообщений: {mcnt}"
-    lines.append(tail)
+    gender = pgr[0] if pgr and pgr[0] else "не указан"
+    lines.append(f"👨 Пол: {esc(gender)}")
+
+    bday = pgr[2] if pgr else ""
+    if bday:
+        vis = _normalize_vis(pgr[3] if pgr else "full")
+        if vis == "месяц":
+            btxt = ".".join(bday.split(".")[1:])
+        elif vis == "год":
+            btxt = bday.split(".")[-1]
+        else:
+            btxt = bday
+        age = _age_str(bday)
+        lines.append(f"📆 Дата рождения: {esc(btxt)} {age}".strip())
+    else:
+        lines.append("📆 Дата рождения: не указана")
+
+    city = pgr[1] if pgr else ""
+    if city:
+        cinfo = _CITY_INDEX.get(city.strip().lower())
+        if cinfo:
+            lines.append(f"🗺 Город: {esc(cinfo['name'])} ({CITIES_BASE_URL.format(cinfo['id'])})")
+        else:
+            lines.append(f"🗺 Город: {esc(city)}")
+    else:
+        lines.append("🗺 Город: не указан")
+
+    day, week, month, total = act
+    lines.append(f"📊 Активность (день|нед|мес|всего): {_kfmt(day)} | {_kfmt(week)} | {_kfmt(month)} | {_kfmt(total)}")
+
+    emoji, sname = _star_level(stars)
+    lines.append(f"✨ Звёздность: [{stars}] {emoji} {sname} ({stars})")
+
+    motto = pgr[5] if pgr else ""
+    if motto:
+        lines.append(f"🗓 Девиз: {esc(motto)}")
     return "\n".join(lines)
 
 
@@ -1176,16 +1310,6 @@ async def _show_card(message: Message, chat_id: int, target_id: int, viewer_id: 
             (target_id,)
         )
         subs = (await subsc.fetchone())[0]
-        wc = await conn.execute(
-            "SELECT COUNT(*) FROM warns WHERE chat_id = ? AND user_id = ? AND is_active = 1",
-            (chat_id, target_id)
-        )
-        warns = (await wc.fetchone())[0]
-        ac = await conn.execute(
-            "SELECT COUNT(*) FROM awards_medals WHERE chat_id = ? AND user_id = ?",
-            (chat_id, target_id)
-        )
-        awards = (await ac.fetchone())[0]
         mq = await conn.execute(
             "SELECT COALESCE(SUM(msg_count), 0) FROM user_last_message WHERE user_id = ?",
             (target_id,)
@@ -1196,19 +1320,60 @@ async def _show_card(message: Message, chat_id: int, target_id: int, viewer_id: 
             (viewer_id, target_id)
         )
         is_subbed = bool(await sb.fetchone())
+        ls = await conn.execute(
+            "SELECT MAX(last_msg_at) FROM user_last_message WHERE user_id = ?",
+            (target_id,)
+        )
+        last_seen = (await ls.fetchone())[0]
+        ad = await conn.execute(
+            "SELECT day, msg_count FROM activity_daily WHERE user_id = ?",
+            (target_id,)
+        )
+        activity_rows = await ad.fetchall()
 
     if pcr and not pcr[3] and not is_own:
         await message.reply("🔒 Пользователь скрыл свою анкету.")
         return
 
     if is_pm:
-        name = esc(message.from_user.first_name or "Пользователь")
+        name = message.from_user.first_name or "Пользователь"
+        username = message.from_user.username
     else:
         name = await resolve_name(chat_id, target_id)
+        username = None
+        try:
+            cm = await bot.get_chat_member(chat_id, target_id)
+            if cm and cm.user:
+                username = cm.user.username
+        except Exception as e:
+            logger.warning(f"Username fetch failed: {e}")
 
-    text = _card_caption(name, target_id, pcr, pgr, repr_, subs, warns, awards, mcnt)
+    today = int(time.strftime("%Y%m%d"))
+    day = sum(v for d, v in activity_rows if d == today)
+    week = sum(v for d, v in activity_rows if today - 7 < d <= today)
+    month = sum(v for d, v in activity_rows if today - 30 < d <= today)
+    stars = repr_[1] if repr_ else 0
+    act = (day, week, month, mcnt)
+
+    text = _card_caption(name, username, target_id, pgr, last_seen, act, stars)
     anketa_visible = not (pcr and not pcr[3])
     kb = _card_keyboard(target_id, is_own, is_subbed, anketa_visible)
+
+    chart_bytes = await _make_activity_chart_bytes(target_id, 14)
+    if chart_bytes:
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        tmp.write(chart_bytes)
+        tmp.close()
+        try:
+            await message.reply_photo(FSInputFile(tmp.name), caption=text, reply_markup=kb)
+            return
+        except Exception as e:
+            logger.warning(f"Chart photo failed: {e}")
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
 
     try:
         photos = await bot.get_user_profile_photos(target_id, limit=1)
