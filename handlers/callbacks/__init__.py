@@ -19,7 +19,7 @@ from keyboards import (
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
-from handlers import _pending_edits, _captcha_answers
+from handlers import _pending_edits
 
 from .common import safe_edit
 
@@ -278,7 +278,6 @@ async def captcha_verify_callback(callback: CallbackQuery):
             await conn.commit()
 
     if pending:
-        _captcha_answers.pop((user_id, chat_id), None)
         await safe_edit(callback, 
             f"✅ {esc(callback.from_user.first_name)}, капча пройдена! Добро пожаловать."
         )

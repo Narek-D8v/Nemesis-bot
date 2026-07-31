@@ -506,21 +506,26 @@ async def set_profile_city(message: Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = _get_stored_chat_id(user_id) or message.chat.id
     val = message.text.strip()
-    from plugins.profile.handlers import CITY_MAX
+    from plugins.profile.handlers import CITY_MAX, _resolve_city, CITIES_BASE_URL, esc
     if not val:
         await message.answer("❌ Город не может быть пустым.")
         return
     if len(val) > CITY_MAX:
         await message.answer(f"❌ Город слишком длинный (макс. {CITY_MAX} символов).")
         return
+    found = _resolve_city(val)
+    if not found:
+        await message.answer(f"❌ Город «{esc(val)}» не найден в базе. Проверьте название или напишите город полностью.")
+        return
+    city, city_id = found
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
             "INSERT INTO profile_global (user_id, city) VALUES (?, ?) "
             "ON CONFLICT(user_id) DO UPDATE SET city = ?",
-            (user_id, val, val)
+            (user_id, city, city)
         )
         await conn.commit()
-    await _finish_profile_edit(message, state, f"✅ Город установлен: {esc(val)}", chat_id, user_id)
+    await _finish_profile_edit(message, state, f"✅ Город установлен: {esc(city)} ({CITIES_BASE_URL.format(city_id)})", chat_id, user_id)
 
 
 @router.message(ProfileStates.waiting_birthday)

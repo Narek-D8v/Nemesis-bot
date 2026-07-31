@@ -32,7 +32,7 @@ from keyboards import (
 from bayes import BayesClassifier
 from utils.virustotal import check_file_safety, SCANNABLE_EXTENSIONS
 from utils.mentions import cache_user_from_message, cache_user_from_member
-from handlers import _pending_edits, _captcha_answers
+from handlers import _pending_edits
 from core.plugin_hooks import get_hooks
 
 router = Router()
@@ -162,7 +162,9 @@ async def check_triggers(message: Message, chat_id: int, user_id: int, text: str
 
 
 async def send_captcha(chat_id: int, user_id: int):
-    captcha_type = (await db.get_settings(chat_id)).get("captcha", {}).get("type", "button")
+    settings = await db.get_settings(chat_id)
+    captcha_type = settings.get("captcha", {}).get("type", "button")
+    answer = None
     try:
         if captcha_type == "math":
             a, b = random.randint(1, 10), random.randint(1, 10)
@@ -173,7 +175,6 @@ async def send_captcha(chat_id: int, user_id: int):
                 f"<a href='tg://user?id={user_id}'>User</a>, реши пример: {a} + {b} = ?\n"
                 f"У вас есть 60 секунд.",
             )
-            _captcha_answers[(user_id, chat_id)] = answer
         else:
             msg = await bot.send_message(
                 chat_id,
@@ -187,10 +188,54 @@ async def send_captcha(chat_id: int, user_id: int):
 
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
-            "INSERT OR REPLACE INTO captcha_pending (user_id, chat_id, message_id, timestamp) VALUES (?, ?, ?, ?)",
-            (user_id, chat_id, msg.message_id, int(time.time())),
+            "INSERT OR REPLACE INTO captcha_pending (user_id, chat_id, message_id, timestamp, answer) VALUES (?, ?, ?, ?, ?)",
+            (user_id, chat_id, msg.message_id, int(time.time()), answer),
         )
         await conn.commit()
+
+
+async def _captcha_block(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    if not settings.get("captcha", {}).get("enabled", True):
+        return False
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT message_id, timestamp, answer FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+        if time.time() - row[1] > 60:
+            await conn.execute(
+                "DELETE FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
+                (user_id, chat_id),
+            )
+            await conn.commit()
+            try:
+                await bot.delete_message(chat_id, row[0])
+            except Exception:
+                pass
+            return False
+        captcha_type = settings.get("captcha", {}).get("type", "button")
+        if captcha_type == "math":
+            answer = row[2]
+            if answer is not None and text.isdigit() and int(text) == answer:
+                await conn.execute(
+                    "DELETE FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
+                    (user_id, chat_id),
+                )
+                await conn.commit()
+                try:
+                    await bot.delete_message(chat_id, row[0])
+                except Exception:
+                    pass
+                await message.reply(f"✅ {esc(message.from_user.first_name)}, капча пройдена! Добро пожаловать.")
+                return True
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    return True
 
 
 @router.chat_member(ChatMemberUpdatedFilter(JOIN_TRANSITION))
@@ -539,6 +584,9 @@ async def message_handler(message: Message):
             pass
         return
 
+    if await _captcha_block(message, chat_id, user_id, text, settings):
+        return
+
     for hook in get_hooks():
         try:
             if await hook(message, chat_id, user_id, text, settings):
@@ -585,7 +633,7 @@ async def message_handler(message: Message):
                         f"✅ Время автопостинга: {time_str}",
                         reply_markup=daily_rules_menu(chat_settings),
                     )
-    await check_triggers(message, chat_id, user_id, text, settings)
+    await _moderate_pipeline(message, chat_id, user_id, text, settings)
     return
 
 
@@ -664,43 +712,15 @@ async def file_no_caption_handler(message: Message):
                             except Exception:
                                 pass
 
-    if settings.get("captcha", {}).get("enabled", True):
-        async with aiosqlite.connect(db.db_path) as conn:
-            cursor = await conn.execute(
-                "SELECT * FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
-                (user_id, chat_id),
-            )
-            pending = await cursor.fetchone()
-            if pending:
-                elapsed = time.time() - pending[3]
-                if elapsed > 60:
-                    await conn.execute(
-                        "DELETE FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
-                        (user_id, chat_id),
-                    )
-                    await conn.commit()
-                    _captcha_answers.pop((user_id, chat_id), None)
-                    try:
-                        await bot.delete_message(chat_id, pending[2])
-                    except Exception:
-                        pass
-                captcha_type = settings.get("captcha", {}).get("type", "button")
-                if captcha_type == "math":
-                    answer = _captcha_answers.get((user_id, chat_id))
-                    if answer is not None and text.isdigit() and int(text) == answer:
-                        _captcha_answers.pop((user_id, chat_id), None)
-                        await conn.execute(
-                            "DELETE FROM captcha_pending WHERE user_id = ? AND chat_id = ?",
-                            (user_id, chat_id),
-                        )
-                        await conn.commit()
-                        await message.reply(f"✅ {esc(message.from_user.first_name)}, капча пройдена! Добро пожаловать.")
-                        return
-                try:
-                    await message.delete()
-                except Exception:
-                    pass
-                return
+    if await _captcha_block(message, chat_id, user_id, text, settings):
+        return
+
+    await _moderate_pipeline(message, chat_id, user_id, text, settings)
+
+
+async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text: str, settings: dict):
+    if await is_whitelisted(chat_id, user_id, settings):
+        return
 
     bayes_settings = await db.get_bayes_settings(chat_id)
     if bayes_settings['enabled']:
