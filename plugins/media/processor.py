@@ -313,7 +313,13 @@ async def _run_ffmpeg(args: list[str]) -> tuple[int, str, str]:
 
 def _ffmpeg_path() -> str:
     p = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
-    return p or "ffmpeg"
+    if p:
+        return p
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
 
 
 async def make_video_circle(input_path: str, output_path: str, max_duration: int = 60):

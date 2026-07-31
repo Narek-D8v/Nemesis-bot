@@ -414,7 +414,18 @@ async def _handle_tgadmin(message: Message, chat_id: int, user_id: int, text: st
         await message.reply(USER_REQUIRED_MSG)
         return
     try:
+        bot_member = await bot.get_chat_member(chat_id, bot.id)
+        if bot_member.status != ChatMemberStatus.ADMINISTRATOR:
+            await message.reply(
+                "❌ У бота нет прав администратора в этом чате. "
+                "Назначьте бота администратором в настройках чата (желательно все права)."
+            )
+            return
         if cmd_text.startswith("+"):
+            target_member = await bot.get_chat_member(chat_id, target_id)
+            if target_member.status in (ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR):
+                await message.reply("❌ Пользователь уже является администратором.")
+                return
             title_match = re.search(r'\[([^\]]+)\]', cmd_text)
             title = html.escape(title_match.group(1)) if title_match else "Администратор"
             await bot.promote_chat_member(

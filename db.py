@@ -439,6 +439,26 @@ class Database:
             )
             await db.commit()
 
+    async def is_first_join(self, chat_id: int, user_id: int) -> bool:
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS user_join_history ("
+                "chat_id INTEGER, user_id INTEGER, first_joined_at INTEGER NOT NULL DEFAULT 0, "
+                "PRIMARY KEY (chat_id, user_id))"
+            )
+            cursor = await conn.execute(
+                "SELECT 1 FROM user_join_history WHERE chat_id = ? AND user_id = ?",
+                (chat_id, user_id),
+            )
+            if await cursor.fetchone():
+                return False
+            await conn.execute(
+                "INSERT INTO user_join_history (chat_id, user_id, first_joined_at) VALUES (?, ?, ?)",
+                (chat_id, user_id, int(time.time())),
+            )
+            await conn.commit()
+            return True
+
     async def get_logs(self, chat_id: int, limit: int = 50) -> list:
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
