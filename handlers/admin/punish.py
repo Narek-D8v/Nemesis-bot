@@ -6,7 +6,7 @@ from aiogram.types import Message
 
 from bot import bot, logger
 from db import db
-from utils import esc, format_duration
+from utils import esc, format_duration, name_link
 from utils.time_parser import parse_time, PERMANENT
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
@@ -75,7 +75,7 @@ async def mute_handler(message: Message):
     if not muted:
         resp += "\n⚠️ Не удалось применить мут — проверьте права бота (can_restrict_members)."
     if show_tags:
-        resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+        resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
     await message.reply(resp)
     try:
         await bot.send_message(target_id, f"🔇 Вы получили мут в группе на {dur_str}.\nПричина: {esc(reason or 'Нарушение')}")
@@ -237,7 +237,7 @@ async def ban_handler(message: Message):
     if not banned:
         resp += "\n⚠️ Не удалось забанить — проверьте права бота (can_restrict_members)."
     if show_tags:
-        resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+        resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
     await message.reply(resp)
     try:
         await bot.send_message(target_id, f"⛔ Вы забанены в группе.\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}")

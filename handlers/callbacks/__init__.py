@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot import bot, logger
 from db import db
-from utils import esc, apply_aggression_level
+from utils import esc, apply_aggression_level, name_link
 from keyboards import (
     main_menu, protection_menu, settings_menu, premium_menu,
     stats_menu, logs_menu, admins_menu, threshold_menu,
@@ -279,7 +279,7 @@ async def captcha_verify_callback(callback: CallbackQuery):
 
     if pending:
         await safe_edit(callback, 
-            f"✅ {esc(callback.from_user.first_name)}, капча пройдена! Добро пожаловать."
+            f"✅ {name_link(callback.from_user.id, callback.from_user.first_name)}, капча пройдена! Добро пожаловать."
         )
         await callback.answer("✅ Капча пройдена!")
     else:

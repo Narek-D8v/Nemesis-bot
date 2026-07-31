@@ -23,7 +23,7 @@ from db import db
 from utils import (
     has_url, has_invite_link, has_mention_all, contains_mat,
     replace_mat, has_mask, is_account_old_enough,
-    has_bot_command, esc, extract_all_urls,
+    has_bot_command, esc, extract_all_urls, name_link,
 )
 from utils.ad_detector import is_short_ad_message, check_url_frequency, has_invite_wide
 from keyboards import (
@@ -167,7 +167,7 @@ async def send_captcha(chat_id: int, user_id: int, display_name: str = None):
     answer = None
     if display_name is None:
         display_name = "User"
-    name_link = f"<a href='tg://user?id={user_id}'>{esc(display_name)}</a>"
+    name_html = f"<a href='tg://user?id={user_id}'>{esc(display_name)}</a>"
     try:
         if captcha_type == "math":
             a, b = random.randint(1, 10), random.randint(1, 10)
@@ -175,14 +175,14 @@ async def send_captcha(chat_id: int, user_id: int, display_name: str = None):
             msg = await bot.send_message(
                 chat_id,
                 f"🧩 <b>Капча для новичка!</b>\n\n"
-                f"{name_link}, реши пример: {a} + {b} = ?\n"
+                f"{name_html}, реши пример: {a} + {b} = ?\n"
                 f"У вас есть 60 секунд.",
             )
         else:
             msg = await bot.send_message(
                 chat_id,
                 f"🧩 <b>Капча для новичка!</b>\n\n"
-                f"{name_link}, нажми кнопку, чтобы подтвердить, что ты не робот.",
+                f"{name_html}, нажми кнопку, чтобы подтвердить, что ты не робот.",
                 reply_markup=captcha_correct_keyboard(),
             )
     except Exception as e:
@@ -234,7 +234,7 @@ async def _captcha_block(message: Message, chat_id: int, user_id: int, text: str
                     await bot.delete_message(chat_id, row[0])
                 except Exception:
                     pass
-                await message.reply(f"✅ {esc(message.from_user.first_name)}, капча пройдена! Добро пожаловать.")
+                await message.reply(f"✅ {name_link(message.from_user.id, message.from_user.first_name)}, капча пройдена! Добро пожаловать.")
                 return True
     try:
         await message.delete()
@@ -510,8 +510,8 @@ async def cmd_report(message: Message):
         link_chat_id = link_chat_id[4:]
     msg_link = f"https://t.me/c/{link_chat_id}/{message.reply_to_message.message_id}"
 
-    reporter_name = esc(reporter.first_name or "Пользователь")
-    offender_name = esc(offender.first_name or "Пользователь") if offender else "Неизвестно"
+    reporter_name = name_link(reporter.id, reporter.first_name or "Пользователь")
+    offender_name = name_link(offender.id, offender.first_name or "Пользователь") if offender else "Неизвестно"
     offender_id = offender.id if offender else 0
 
     notification = (
@@ -712,7 +712,7 @@ async def file_no_caption_handler(message: Message):
                                 await message.delete()
                                 await db.add_log(chat_id, user_id, "virus_total", f"Malicious file: {file_name}")
                                 await message.answer(
-                                    f"🛡️ {esc(message.from_user.first_name)}, ваш файл удален "
+                                    f"🛡️ {name_link(message.from_user.id, message.from_user.first_name)}, ваш файл удален "
                                     f"(обнаружена вредоносная нагрузка)"
                                 )
                     except Exception as e:
@@ -759,7 +759,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
                 await message.delete()
                 await db.add_log(chat_id, user_id, "delete", "Команда другого бота")
                 warn = await message.answer(
-                    f"🚫 {esc(message.from_user.first_name)}, команды других ботов запрещены."
+                    f"🚫 {name_link(message.from_user.id, message.from_user.first_name)}, команды других ботов запрещены."
                 )
                 await asyncio.sleep(5)
                 await warn.delete()
@@ -789,7 +789,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
             await db.add_log(chat_id, user_id, "mute", "Повтор сообщений")
             try:
                 warn = await message.answer(
-                    f"🔇 {esc(message.from_user.first_name)}, мут 5 мин за повтор сообщений."
+                    f"🔇 {name_link(message.from_user.id, message.from_user.first_name)}, мут 5 мин за повтор сообщений."
                 )
                 await asyncio.sleep(5)
                 await warn.delete()
@@ -801,7 +801,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
         try:
             await message.delete()
             warn = await message.answer(
-                f"🚫 {esc(message.from_user.first_name)}, массовые упоминания запрещены."
+                f"🚫 {name_link(message.from_user.id, message.from_user.first_name)}, массовые упоминания запрещены."
             )
             await asyncio.sleep(5)
             await warn.delete()
@@ -829,7 +829,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
             elif action == "ban":
                 await ban_user(chat_id, user_id, link_type)
             resp = await message.answer(
-                f"🚫 {esc(message.from_user.first_name)}, {link_type} запрещены!"
+                f"🚫 {name_link(message.from_user.id, message.from_user.first_name)}, {link_type} запрещены!"
             )
             await asyncio.sleep(5)
             await resp.delete()
@@ -848,7 +848,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
                     await message.delete()
                     await db.add_log(chat_id, user_id, "virus_total", f"Malicious URL: {url}")
                     await message.answer(
-                        f"🛡️ {esc(message.from_user.first_name)}, ваше сообщение удалено "
+                        f"🛡️ {name_link(message.from_user.id, message.from_user.first_name)}, ваше сообщение удалено "
                         f"(обнаружена вредоносная ссылка)"
                     )
                 except Exception:
@@ -883,7 +883,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
                     await message.delete()
                     await db.add_log(chat_id, user_id, "delete", f"Чёрный список: {word}")
                     warn = await message.answer(
-                        f"🚫 {esc(message.from_user.first_name)}, это слово запрещено."
+                        f"🚫 {name_link(message.from_user.id, message.from_user.first_name)}, это слово запрещено."
                     )
                     await asyncio.sleep(5)
                     await warn.delete()
@@ -901,7 +901,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
             try:
                 clean_text = replace_mat(text)
                 await message.answer(
-                    f"✏️ {esc(message.from_user.first_name)} написал(а):\n{clean_text}"
+                    f"✏️ {name_link(message.from_user.id, message.from_user.first_name)} написал(а):\n{clean_text}"
                 )
                 await db.add_log(chat_id, user_id, "edit", "Замена мата")
             except Exception:
@@ -918,13 +918,13 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
                     await mute_user(chat_id, user_id, 10, "Мат (3+ предупреждения)")
                     await db.clear_warns(chat_id, user_id)
                     await message.answer(
-                        f"🔇 {esc(message.from_user.first_name)}, мут 10 мин за мат."
+                        f"🔇 {name_link(message.from_user.id, message.from_user.first_name)}, мут 10 мин за мат."
                     )
                 else:
                     await db.add_warn(chat_id, user_id, 0, "мат")
                     await db.add_log(chat_id, user_id, "warn", "мат")
                     warn = await message.answer(
-                        f"⚠️ {esc(message.from_user.first_name)}, мат запрещён! "
+                        f"⚠️ {name_link(message.from_user.id, message.from_user.first_name)}, мат запрещён! "
                         f"(предупреждение {len(mat_warns) + 1}/3)"
                     )
                     await asyncio.sleep(5)
@@ -958,7 +958,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
                 await message.delete()
                 await db.add_log(chat_id, user_id, "delete", "Форвард новичка")
                 warn = await message.answer(
-                    f"🚫 {esc(message.from_user.first_name)}, пересылка запрещена в первые 24 часа."
+                    f"🚫 {name_link(message.from_user.id, message.from_user.first_name)}, пересылка запрещена в первые 24 часа."
                 )
                 await asyncio.sleep(5)
                 await warn.delete()

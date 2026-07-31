@@ -4,7 +4,7 @@ from aiogram import Router
 from aiogram.types import Message
 
 from bot import logger
-from utils import esc
+from utils import esc, name_link
 
 router = Router()
 
@@ -47,7 +47,7 @@ async def nemusya_reply(message: Message):
     if message.from_user.is_bot:
         logger.debug(f"nemusya_reply: from_user is bot (chat={message.chat.id})")
         return
-    username = esc(message.from_user.first_name or "дорогой пользователь")
+    username = name_link(message.from_user.id, message.from_user.first_name or "дорогой пользователь")
     reply = random.choice(NEMUSYA_REPLIES)
     logger.info(f"Easter egg triggered: 'Немуся' by {message.from_user.id} in {message.chat.id} (type={message.chat.type})")
     try:

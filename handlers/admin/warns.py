@@ -6,7 +6,7 @@ from aiogram.types import Message
 
 from bot import bot, logger
 from db import db
-from utils import esc, format_duration
+from utils import esc, format_duration, name_link
 from utils.time_parser import parse_time
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
@@ -49,7 +49,7 @@ async def warn_handler(message: Message):
     tname = await resolve_name(chat_id, target_id)
     resp = f"⚠️ <b>Предупреждение</b>\nПользователь: {tname}\nПричина: {esc(reason)}\nПредупреждений: {wcount}/{wlimit}"
     if show_tags:
-        resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+        resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
     await message.reply(resp)
     try:
         await bot.send_message(target_id, f"⚠️ Вы получили предупреждение в группе.\nПричина: {esc(reason)}")

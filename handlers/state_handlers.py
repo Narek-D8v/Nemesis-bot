@@ -506,7 +506,7 @@ async def set_profile_city(message: Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = _get_stored_chat_id(user_id) or message.chat.id
     val = message.text.strip()
-    from plugins.profile.handlers import CITY_MAX, _resolve_city, CITIES_BASE_URL, esc
+    from plugins.profile.handlers import CITY_MAX, _resolve_city, _city_wiki_link, esc
     if not val:
         await message.answer("❌ Город не может быть пустым.")
         return
@@ -525,7 +525,7 @@ async def set_profile_city(message: Message, state: FSMContext):
             (user_id, city, city)
         )
         await conn.commit()
-    await _finish_profile_edit(message, state, f"✅ Город установлен: {esc(city)} ({CITIES_BASE_URL.format(city_id)})", chat_id, user_id)
+    await _finish_profile_edit(message, state, f"✅ Город установлен: <a href='{_city_wiki_link(city)}'>{esc(city)}</a>", chat_id, user_id)
 
 
 @router.message(ProfileStates.waiting_birthday)

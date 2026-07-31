@@ -9,7 +9,7 @@ from aiogram.enums import ChatType
 
 from bot import bot, logger
 from db import db
-from utils import is_night_mode, esc
+from utils import is_night_mode, esc, name_link
 
 
 _init_lock = asyncio.Lock()
@@ -115,7 +115,7 @@ class AntiFloodMiddleware(BaseMiddleware):
                 await db.add_log(chat_id, user_id, "delete", "Флуд")
                 logger.info(f"Anti-flood: deleted message from {user_id} in {chat_id}")
                 warn_msg = await event.answer(
-                    f"<b>🚫 Анти-флуд:</b> {esc(event.from_user.first_name)}, не спамьте!",
+                    f"<b>🚫 Анти-флуд:</b> {name_link(event.from_user.id, event.from_user.first_name)}, не спамьте!",
                 )
                 await asyncio.sleep(5)
                 await warn_msg.delete()

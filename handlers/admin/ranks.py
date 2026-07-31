@@ -8,7 +8,7 @@ from aiogram.enums import ChatMemberStatus
 
 from bot import bot, logger
 from db import db
-from utils import esc
+from utils import esc, name_link
 from utils.mentions import extract_user
 from utils.user_name import resolve_name
 from .common import RANK_NAMES, check_rank, get_min_rank, parse_cmd_rank, call_plugin_hooks
@@ -60,7 +60,7 @@ async def promote_handler(message: Message):
     rname = settings.get("moderator_rank_names", {}).get(str(cmd_rank), RANK_NAMES.get(cmd_rank, f"Ранг {cmd_rank}"))
     resp = f"✅ {rname} назначен."
     if show_tags:
-        resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+        resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
     await message.reply(resp)
 
 

@@ -5,6 +5,7 @@ from aiogram.filters import Command
 from bot import bot, logger
 from config import ADMIN_ID
 from db import db
+from utils import name_link
 from keyboards import main_menu
 
 router = Router()
@@ -74,7 +75,7 @@ async def gift_premium(message: Message):
 
     await message.reply(
         f"✅ <b>Премиум подарен!</b>\n\n"
-        f"Пользователь {target.full_name} (<code>{target.id}</code>) "
+        f"Пользователь {name_link(target.id, target.full_name)} (<code>{target.id}</code>) "
         f"получил 30 дней личного премиума."
     )
     try:

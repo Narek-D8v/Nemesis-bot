@@ -7,7 +7,7 @@ from aiogram.types import Message
 
 from bot import bot
 from db import db
-from utils import esc
+from utils import esc, name_link
 from utils.time_parser import parse_time
 from utils.mentions import extract_user
 from utils.chat_utils import delete_messages, get_messages_above, get_messages_below, kick_user
@@ -73,7 +73,7 @@ async def cleanup_handler(message: Message):
             if not silent:
                 resp = f"🗑 Удалено сообщений: {deleted}"
                 if show_tags:
-                    resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                    resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
                 await message.answer(resp)
         else:
             if message.reply_to_message:
@@ -83,7 +83,7 @@ async def cleanup_handler(message: Message):
                     if not silent:
                         resp = f"🗑 Сообщение удалено."
                         if show_tags:
-                            resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                            resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
                         await message.answer(resp)
                 except Exception as e:
                     await message.answer("❌ Не удалось удалить сообщение.")
@@ -118,7 +118,7 @@ async def cleanup_handler(message: Message):
         if not silent:
             resp = f"🗑 Очищено сообщений: {deleted}"
             if show_tags:
-                resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
             await message.answer(resp)
         return
 
@@ -144,7 +144,7 @@ async def cleanup_handler(message: Message):
                 tname = await resolve_name(chat_id, target_id)
                 resp = f"👢 Пользователь {tname} кикнут."
                 if show_tags:
-                    resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                    resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
                 await message.reply(resp)
             else:
                 await message.reply("❌ Не удалось кикнуть (возможно, админ).")
@@ -184,7 +184,7 @@ async def cleanup_handler(message: Message):
                     await asyncio.sleep(0.3)
             resp = f"👢 Исключено неактивных: {kicked}"
             if show_tags:
-                resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
             await message.reply(resp)
             return
 
@@ -212,7 +212,7 @@ async def cleanup_handler(message: Message):
                     await asyncio.sleep(0.3)
             resp = f"👢 Исключено активных: {kicked}"
             if show_tags:
-                resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
             await message.reply(resp)
             return
 
@@ -239,7 +239,7 @@ async def cleanup_handler(message: Message):
                     await asyncio.sleep(0.3)
             resp = f"👢 Исключено новичков: {kicked}"
             if show_tags:
-                resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
             await message.reply(resp)
             return
 
@@ -263,7 +263,7 @@ async def cleanup_handler(message: Message):
                     pass
             resp = f"👢 Исключено удалённых аккаунтов: {kicked}"
             if show_tags:
-                resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
             await message.reply(resp)
             return
 
@@ -289,7 +289,7 @@ async def cleanup_handler(message: Message):
                     await asyncio.sleep(0.3)
             resp = f"👢 Исключено молчунов: {kicked}"
             if show_tags:
-                resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
             await message.reply(resp)
             return
 
@@ -319,7 +319,7 @@ async def cleanup_handler(message: Message):
                     await asyncio.sleep(0.3)
             resp = f"👢 Исключено по лимиту сообщений: {kicked}"
             if show_tags:
-                resp += f"\n👮 {esc(message.from_user.first_name)} (ID:{user_id})"
+                resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"
             await message.reply(resp)
             return
 

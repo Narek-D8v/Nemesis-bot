@@ -148,6 +148,10 @@ def esc(text: str) -> str:
         return ""
     return html.escape(str(text), quote=False)
 
+def name_link(user_id: int, name: str) -> str:
+    return f"<a href='tg://user?id={user_id}'>{esc(name)}</a>"
+
+
 def format_duration(minutes: int) -> str:
     if minutes is None:
         return "навсегда"
