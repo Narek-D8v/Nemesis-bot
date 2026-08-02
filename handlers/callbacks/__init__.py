@@ -16,6 +16,7 @@ from keyboards import (
     farewell_menu, reports_menu, whitelist_menu, blacklist_menu,
     daily_rules_menu, back_to_main, aggression_menu,
     bayes_threshold_menu, captcha_correct_keyboard, group_tools_menu,
+    timezone_menu,
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
@@ -226,6 +227,16 @@ async def menu_callback(callback: CallbackQuery):
         await safe_edit(callback, 
             "📋 <b>Ежедневный автопостинг правил</b>",
             reply_markup=daily_rules_menu(settings)
+        )
+
+    elif action == "timezone":
+        settings = await db.get_settings(chat_id)
+        await safe_edit(callback,
+            "🌍 <b>Часовой пояс</b>\n\n"
+            f"Текущий: <b>{settings.get('timezone', 'UTC')}</b>\n\n"
+            "Выберите пояс группы (используется для автопостинга и ночного режима) "
+            "или введите свой:",
+            reply_markup=timezone_menu(back="menu:admins")
         )
 
     elif action == "aggression":

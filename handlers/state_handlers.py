@@ -7,11 +7,11 @@ from aiogram.fsm.context import FSMContext
 
 from bot import logger
 from db import db
-from utils import esc
+from utils import esc, normalize_tz_input
 from keyboards import (
     farewell_menu, greeting_menu, whitelist_menu,
     blacklist_menu, daily_rules_menu, night_mode_menu,
-    protection_menu, group_tools_menu,
+    protection_menu, group_tools_menu, timezone_menu,
 )
 from handlers.states import SettingsStates, ProfileStates
 from handlers.messages import is_admin
@@ -231,6 +231,39 @@ async def set_daily_rules_time(message: Message, state: FSMContext):
             )
             return
     await message.answer("❌ Неверный формат. Используйте ЧЧ:ММ (например, 09:00)")
+
+
+@router.message(SettingsStates.waiting_timezone)
+async def set_timezone(message: Message, state: FSMContext):
+    user_id = message.from_user.id
+    chat_id = _get_stored_chat_id(user_id) or message.chat.id
+    if not await is_admin(chat_id, user_id):
+        await message.reply("❌ Только для администраторов")
+        return
+    normalized = normalize_tz_input(message.text)
+    if not normalized:
+        await message.answer(
+            "❌ Не удалось распознать часовой пояс.\n"
+            "Примеры: <code>Europe/Moscow</code>, <code>UTC+3</code>, <code>GMT-7</code>, <code>+5</code>"
+        )
+        return
+    settings = await db.get_settings(chat_id)
+    settings["timezone"] = normalized
+    await db.save_settings(chat_id, settings)
+    edit = _pending_edits.get(user_id)
+    is_daily = bool(edit and edit.get("type") == "daily_rules_timezone")
+    _pending_edits.pop(user_id, None)
+    await state.clear()
+    if is_daily:
+        await message.answer(
+            f"🌍 Часовой пояс: {normalized}",
+            reply_markup=daily_rules_menu(settings),
+        )
+    else:
+        await message.answer(
+            f"🌍 <b>Часовой пояс</b>\n\nТекущий: <b>{normalized}</b>",
+            reply_markup=timezone_menu(back="menu:admins"),
+        )
 
 
 @router.message(SettingsStates.waiting_night_start)

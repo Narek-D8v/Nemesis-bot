@@ -1,7 +1,7 @@
 import re
 import time
 import html
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 from aiogram.types import Message
@@ -224,15 +224,58 @@ def apply_aggression_level(settings: dict, level: int):
         settings["mention_block"] = True
         settings["forward_block"] = True
 
+def get_tz(tz_name: str | None):
+    """Возвращает объект tzinfo для названия. Поддерживает IANA-зоны
+    (Europe/Moscow) и офсеты вида 'UTC+3', 'GMT-7', '+3', '3'.
+    При ошибке — системный часовой пояс."""
+    name = (tz_name or "").strip()
+    if not name:
+        return datetime.now().astimezone().tzinfo
+    try:
+        if name.upper().startswith(("UTC", "GMT")):
+            match = re.match(r'^(?:UTC|GMT)\s*([+-]?\d{1,2})(?::?(\d{2}))?$', name, re.IGNORECASE)
+            if match:
+                hours = int(match.group(1))
+                minutes = int(match.group(2) or 0)
+                return timezone(timedelta(hours=hours, minutes=minutes))
+        match = re.match(r'^([+-])(\d{1,2})(?::?(\d{2}))?$', name)
+        if match:
+            sign = -1 if match.group(1) == "-" else 1
+            hours = int(match.group(2)) * sign
+            minutes = int(match.group(3) or 0) * sign
+            return timezone(timedelta(hours=hours, minutes=minutes))
+        return ZoneInfo(name)
+    except Exception:
+        return datetime.now().astimezone().tzinfo
+
+
+def normalize_tz_input(value: str) -> str | None:
+    """Нормализует введённый часовой пояс к строке хранения.
+    Возвращает None, если ввод не распознан."""
+    name = (value or "").strip().replace(" ", "")
+    if not name:
+        return None
+    if name.upper() in ("UTC", "GMT"):
+        return "UTC"
+    if name.upper().startswith(("UTC", "GMT")):
+        match = re.match(r'^(?:UTC|GMT)([+-])(\d{1,2})(?::?(\d{2}))?$', name, re.IGNORECASE)
+        if match:
+            return f"{match.group(1)}{int(match.group(2)):02d}:{int(match.group(3) or 0):02d}"
+    match = re.match(r'^([+-])(\d{1,2})(?::?(\d{2}))?$', name)
+    if match:
+        return f"{match.group(1)}{int(match.group(2)):02d}:{int(match.group(3) or 0):02d}"
+    try:
+        ZoneInfo(name)
+        return name
+    except Exception:
+        return None
+
+
 def is_night_mode(settings: dict) -> bool:
     night = settings.get("night_mode", {})
     if not night.get("enabled"):
         return False
-    tz_name = settings.get("timezone", "UTC")
-    try:
-        tz = ZoneInfo(tz_name)
-    except (KeyError, TypeError):
-        tz = ZoneInfo("UTC")
+    tz = get_tz(settings.get("timezone", "UTC"))
     current_hour = datetime.now(tz).hour
     start = night.get("start", 23)
     end = night.get("end", 7)

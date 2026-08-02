@@ -11,7 +11,7 @@ from utils.time_parser import parse_time, PERMANENT
 from utils.mentions import extract_user
 from utils.user_name import resolve_name_link
 from .common import check_rank, get_min_rank, get_reason, call_plugin_hooks
-from handlers.messages import MUTE_PERMISSIONS, UNMUTE_PERMISSIONS
+from handlers.messages import apply_mute, MUTE_PERMISSIONS, UNMUTE_PERMISSIONS
 
 router = Router()
 
@@ -59,20 +59,14 @@ async def mute_handler(message: Message):
         until_date = expires_at
         dur_str = format_duration(duration_min)
 
-    await db.add_mute(chat_id, target_id, user_id, reason or "Нарушение", expires_at)
+    apply_result = await apply_mute(chat_id, target_id, duration_min, reason or "Нарушение", user_id)
+    muted, virtual = apply_result
     await db.add_moderator_log(chat_id, user_id, "mute", target_id, reason or "Нарушение")
-    muted = False
-    try:
-        muted = await bot.restrict_chat_member(
-            chat_id, target_id,
-            permissions=MUTE_PERMISSIONS,
-            until_date=until_date,
-        )
-    except Exception as e:
-        logger.warning(f"Mute failed: {e}")
     tname = await resolve_name_link(chat_id, target_id)
     resp = f"🔇 <b>Мут</b>\nПользователь: {tname}\nСрок: {dur_str}\nПричина: {esc(reason or 'Нарушение')}"
-    if not muted:
+    if virtual:
+        resp += f"\nℹ️ Админ/владелец не может быть ограничен — его сообщения будут удаляться в течение {dur_str}."
+    elif not muted:
         resp += "\n⚠️ Не удалось применить мут — проверьте права бота (can_restrict_members)."
     if show_tags:
         resp += f"\n👮 {name_link(user_id, message.from_user.first_name)} (ID:{user_id})"

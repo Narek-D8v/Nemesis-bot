@@ -10,6 +10,7 @@ class SettingsStates(StatesGroup):
     waiting_whitelist_user_remove = State()
     waiting_daily_rules_text = State()
     waiting_daily_rules_time = State()
+    waiting_timezone = State()
     waiting_night_start = State()
     waiting_night_end = State()
     waiting_night_action = State()

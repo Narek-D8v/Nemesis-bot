@@ -24,7 +24,9 @@ from utils import (
     has_url, has_invite_link, has_mention_all, contains_mat,
     replace_mat, has_mask, is_account_old_enough,
     has_bot_command, esc, extract_all_urls, name_link,
+    normalize_tz_input,
 )
+from utils.time_parser import PERMANENT
 from utils.ad_detector import is_short_ad_message, check_url_frequency, has_invite_wide
 from keyboards import (
     captcha_correct_keyboard, greeting_menu, farewell_menu, daily_rules_menu,
@@ -39,6 +41,9 @@ router = Router()
 
 last_messages: OrderedDict = OrderedDict()
 _classifiers: dict[str, BayesClassifier] = {}
+
+_recent_msg_ids: dict[tuple[int, int], list[int]] = {}
+_RECENT_LIMIT = 50
 
 MUTE_PERMISSIONS = ChatPermissions(
     can_send_messages=False, can_send_media_messages=False,
@@ -73,20 +78,90 @@ async def is_blacklisted(chat_id: int, user_id: int, settings: dict) -> bool:
     return user_id in blacklist
 
 
-async def mute_user(chat_id: int, user_id: int, duration_minutes: int, reason: str) -> bool:
+def remember_user_message(chat_id: int, user_id: int, message_id: int):
+    """Запоминает последние message_id пользователя, чтобы их можно было
+    удалить при выдаче мута (Telegram не отдаёт историю сообщений)."""
+    key = (chat_id, user_id)
+    lst = _recent_msg_ids.get(key, [])
+    lst.append(message_id)
+    if len(lst) > _RECENT_LIMIT:
+        lst = lst[-_RECENT_LIMIT:]
+    _recent_msg_ids[key] = lst
+
+
+async def delete_user_recent_messages(chat_id: int, user_id: int) -> int:
+    """Удаляет запомненные сообщения пользователя до выдачи мута."""
+    ids = _recent_msg_ids.pop((chat_id, user_id), [])
+    if not ids:
+        return 0
+    deleted = 0
+    for i in range(0, len(ids), 100):
+        batch = ids[i:i + 100]
+        try:
+            await bot.delete_messages(chat_id, batch)
+            deleted += len(batch)
+        except Exception as e:
+            logger.warning(f"Delete old messages failed for {user_id}: {e}")
+    return deleted
+
+
+async def apply_mute(chat_id: int, user_id: int, duration_minutes: int, reason: str,
+                     moderator_id: int = 0) -> tuple[bool, bool]:
+    """Применяет мут и удаляет старые сообщения нарушителя.
+
+    Возвращает (applied, is_virtual):
+      - applied=True, is_virtual=False — обычный мут (ограничение restrictChatMember);
+      - applied=True, is_virtual=True  — админ/владелец: Telegram не даёт их ограничивать,
+        поэтому ведётся «виртуальный» мут (запись в БД + удаление всех его сообщений
+        в течение срока через активный мут-чекер);
+      - applied=False — не удалось.
+    """
+    now = int(time.time())
+    if duration_minutes == PERMANENT or duration_minutes is None:
+        expires_at = None
+        until_date = None
+    else:
+        expires_at = now + max(duration_minutes, 1) * 60
+        until_date = expires_at
+    await delete_user_recent_messages(chat_id, user_id)
+
+    if await is_admin(chat_id, user_id):
+        await db.add_mute(chat_id, user_id, moderator_id, reason, expires_at)
+        await db.add_log(chat_id, user_id, "mute", reason)
+        logger.info(f"Admin {user_id} muted virtually in {chat_id} for {duration_minutes}min: {reason}")
+        return True, True
+
     try:
-        until_date = int(time.time()) + duration_minutes * 60
-        await bot.restrict_chat_member(
-            chat_id, user_id,
-            permissions=MUTE_PERMISSIONS,
-            until_date=until_date,
-        )
+        restrict_kwargs = {"permissions": MUTE_PERMISSIONS}
+        if until_date is not None:
+            restrict_kwargs["until_date"] = until_date
+        await bot.restrict_chat_member(chat_id, user_id, **restrict_kwargs)
+        await db.add_mute(chat_id, user_id, moderator_id, reason, expires_at)
         await db.add_log(chat_id, user_id, "mute", reason)
         logger.info(f"Muted {user_id} in {chat_id} for {duration_minutes}min: {reason}")
-        return True
+        return True, False
     except Exception as e:
         logger.warning(f"Mute failed: {e}")
+        return False, False
+
+
+async def mute_user(chat_id: int, user_id: int, duration_minutes: int, reason: str) -> bool:
+    applied, _ = await apply_mute(chat_id, user_id, duration_minutes, reason)
+    return applied
+
+
+async def _enforce_active_mute(message: Message, chat_id: int, user_id: int) -> bool:
+    """Удаляет сообщения пользователя с активным «виртуальным» мутом
+    (админы/владельцы и боты, которых Telegram не даёт ограничить)."""
+    active = await db.get_active_mute(chat_id, user_id)
+    if not active:
         return False
+    try:
+        await message.delete()
+        await db.add_log(chat_id, user_id, "delete", "Сообщение в период мута (админ/владелец)")
+    except Exception:
+        pass
+    return True
 
 
 async def ban_user(chat_id: int, user_id: int, reason: str):
@@ -594,6 +669,11 @@ async def message_handler(message: Message):
     if not message.from_user.is_bot:
         await db.track_message(chat_id, user_id)
 
+    remember_user_message(chat_id, user_id, message.message_id)
+
+    if await _enforce_active_mute(message, chat_id, user_id):
+        return
+
     settings = await db.get_settings(chat_id)
 
     if settings.get("block_channels", False) and message.sender_chat and message.sender_chat.type == "channel":
@@ -652,6 +732,15 @@ async def message_handler(message: Message):
                         f"✅ Время автопостинга: {time_str}",
                         reply_markup=daily_rules_menu(chat_settings),
                     )
+            elif edit["type"] == "timezone":
+                normalized = normalize_tz_input(text)
+                if normalized:
+                    chat_settings["timezone"] = normalized
+                    await db.save_settings(target_chat_id, chat_settings)
+                    await message.answer(
+                        f"🌍 Часовой пояс: {normalized}",
+                        reply_markup=daily_rules_menu(chat_settings),
+                    )
     await _moderate_pipeline(message, chat_id, user_id, text, settings)
     return
 
@@ -668,6 +757,11 @@ async def file_no_caption_handler(message: Message):
 
     if not message.from_user.is_bot:
         await db.track_message(chat_id, user_id)
+
+    remember_user_message(chat_id, user_id, message.message_id)
+
+    if await _enforce_active_mute(message, chat_id, user_id):
+        return
 
     settings = await db.get_settings(chat_id)
 
@@ -899,6 +993,13 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
 
     mute_filter = settings.get("filter_mute", {})
     if mute_filter.get("enabled", True) and contains_mat(text):
+        if await is_admin(chat_id, user_id):
+            try:
+                await message.delete()
+                await db.add_log(chat_id, user_id, "delete", "Мат (админ/владелец)")
+            except Exception:
+                pass
+            return
         if mute_filter.get("replace_with_stars", False):
             try:
                 await message.delete()

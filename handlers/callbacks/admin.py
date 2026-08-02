@@ -7,10 +7,12 @@ from db import db
 from keyboards import (
     protection_menu, whitelist_menu, blacklist_menu,
     night_mode_menu, daily_rules_menu, bayes_threshold_menu,
+    timezone_menu,
 )
 from handlers.states import SettingsStates
 from handlers.messages import is_admin
 from handlers import _pending_edits
+from utils import normalize_tz_input
 from .common import safe_edit
 
 router = Router()
@@ -158,6 +160,14 @@ async def daily_rules_callbacks(callback: CallbackQuery, state: FSMContext):
         await state.set_state(SettingsStates.waiting_daily_rules_time)
         await callback.answer()
         return
+    elif action == "tz":
+        _pending_edits[user_id] = {"type": "daily_rules_timezone", "chat_id": chat_id}
+        await safe_edit(callback,
+            "🌍 Выберите часовой пояс или введите свой:",
+            reply_markup=timezone_menu(back="menu:admins")
+        )
+        await callback.answer()
+        return
     elif action == "edit":
         _pending_edits[user_id] = {"type": "daily_rules_text", "chat_id": chat_id}
         await safe_edit(callback, 
@@ -170,6 +180,57 @@ async def daily_rules_callbacks(callback: CallbackQuery, state: FSMContext):
     await safe_edit(callback, 
         "📋 Автопостинг правил", reply_markup=daily_rules_menu(settings)
     )
+
+
+@router.callback_query(lambda c: c.data.startswith("tz:"))
+async def timezone_callbacks(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+    chat_id = callback.message.chat.id
+    user_id = callback.from_user.id
+    if not await is_admin(chat_id, user_id):
+        await callback.answer("❌ Только для администраторов", show_alert=True)
+        return
+    settings = await db.get_settings(chat_id)
+
+    if action == "custom":
+        prev = _pending_edits.get(user_id)
+        is_daily = bool(prev and prev.get("type") == "daily_rules_timezone")
+        _pending_edits[user_id] = {
+            "type": "daily_rules_timezone" if is_daily else "timezone",
+            "chat_id": chat_id,
+        }
+        await safe_edit(callback,
+            "🌍 Введите часовой пояс (например, Europe/Moscow или UTC+3):"
+        )
+        await state.set_state(SettingsStates.waiting_timezone)
+        await callback.answer()
+        return
+
+    if action == "set" and len(parts) > 2:
+        tz_value = ":".join(parts[2:]).replace("_", " ")
+        normalized = normalize_tz_input(tz_value)
+        if not normalized:
+            await callback.answer("❌ Не удалось распознать часовой пояс", show_alert=True)
+            return
+        settings["timezone"] = normalized
+        await db.save_settings(chat_id, settings)
+        await callback.answer(f"🌍 Часовой пояс: {normalized}")
+        edit = _pending_edits.get(user_id)
+        if edit and edit.get("type") == "daily_rules_timezone":
+            await safe_edit(callback,
+                "📋 Автопостинг правил", reply_markup=daily_rules_menu(settings)
+            )
+        else:
+            await safe_edit(callback,
+                f"🌍 <b>Часовой пояс</b>\n\nТекущий: <b>{normalized}</b>\n\n"
+                "Выберите пояс группы или введите свой:",
+                reply_markup=timezone_menu(back="menu:admins")
+            )
+        _pending_edits.pop(user_id, None)
+        return
+
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data.startswith("reports:"))
