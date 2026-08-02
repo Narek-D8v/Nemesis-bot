@@ -296,6 +296,7 @@ def admins_menu(is_premium: bool):
             InlineKeyboardButton(text="🌙 Ночной режим", callback_data="menu:night"),
             InlineKeyboardButton(text="📋 Правила (авто)", callback_data="menu:daily_rules")
         )
+        b.row(InlineKeyboardButton(text="🌍 Часовой пояс", callback_data="menu:timezone"))
     else:
         b.row(InlineKeyboardButton(text="💎 Купить премиум для доп. функций", callback_data="menu:premium"))
     b.row(InlineKeyboardButton(text="🔙 Назад", callback_data="menu:main"))
@@ -462,8 +463,43 @@ def daily_rules_menu(settings: dict):
         InlineKeyboardButton(text=f"⏰ Время: {rules.get('time', '09:00')}", callback_data="dr:time")
     )
     b.row(
-        InlineKeyboardButton(text="✏️ Изменить текст", callback_data="dr:edit"),
+        InlineKeyboardButton(text=f"🌍 Пояс: {settings.get('timezone', 'UTC')}", callback_data="dr:tz"),
+        InlineKeyboardButton(text="✏️ Изменить текст", callback_data="dr:edit")
+    )
+    b.row(
         InlineKeyboardButton(text="🔙 Назад", callback_data="menu:admins")
+    )
+    return b.as_markup()
+
+
+TZ_PRESETS = [
+    ("UTC", "UTC"),
+    ("🇷🇺 Москва (UTC+3)", "Europe/Moscow"),
+    ("🇰🇿 Алматы (UTC+5)", "Asia/Almaty"),
+    ("🇺🇦 Киев (UTC+2)", "Europe/Kyiv"),
+    ("🇧🇾 Минск (UTC+3)", "Europe/Minsk"),
+    ("UTC+3", "+03:00"),
+    ("UTC+4", "+04:00"),
+    ("UTC+5", "+05:00"),
+    ("UTC+6", "+06:00"),
+    ("UTC+7", "+07:00"),
+    ("UTC+8", "+08:00"),
+    ("UTC+2", "+02:00"),
+    ("UTC+1", "+01:00"),
+    ("UTC-1", "-01:00"),
+    ("UTC-5", "-05:00"),
+    ("Europe/London", "Europe/London"),
+    ("Europe/Paris", "Europe/Paris"),
+    ("Asia/Tokyo", "Asia/Tokyo"),
+]
+
+def timezone_menu(back: str = "menu:admins"):
+    b = InlineKeyboardBuilder()
+    for label, value in TZ_PRESETS:
+        b.row(InlineKeyboardButton(text=label, callback_data=f"tz:set:{value}"))
+    b.row(
+        InlineKeyboardButton(text="✏️ Свой", callback_data="tz:custom"),
+        InlineKeyboardButton(text="🔙 Назад", callback_data=back)
     )
     return b.as_markup()
 
@@ -484,6 +520,7 @@ async def group_tools_menu(settings: dict, chat_id: int = 0):
     )
     b.row(
         InlineKeyboardButton(text=f"⏰ Время: {rules.get('time', '09:00')}", callback_data="gt:rules_time"),
+        InlineKeyboardButton(text=f"🌍 Пояс: {settings.get('timezone', 'UTC')}", callback_data="dr:tz"),
         InlineKeyboardButton(text="✏️ Текст правил", callback_data="gt:rules_edit")
     )
 

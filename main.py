@@ -2,7 +2,6 @@ import asyncio
 import json
 import os
 from datetime import datetime
-from zoneinfo import ZoneInfo
 import aiosqlite
 
 from aiohttp import web
@@ -11,13 +10,13 @@ from bot import bot, dp, logger
 from db import db
 from middlewares import AntiFloodMiddleware, NightModeMiddleware, ChatInitMiddleware
 from core.plugin_manager import PluginManager
+from utils import get_tz
 
 from handlers import start, easter_egg, callbacks, messages, state_handlers, payments, admin, cleanup, commands, scan, export_stats
 from config import ADMIN_ID
 
 
 async def daily_rules_scheduler():
-    last_posted: dict[int, str] = {}
     while True:
         try:
             all_settings = {}
@@ -30,58 +29,66 @@ async def daily_rules_scheduler():
                 except (json.JSONDecodeError, TypeError):
                     logger.warning(f"Invalid config JSON for chat {chat_id}, skipping")
 
-            today_str = None
             for chat_id, settings in all_settings.items():
-                tz_name = settings.get("timezone", "UTC")
-                try:
-                    tz = ZoneInfo(tz_name)
-                except (KeyError, TypeError):
-                    tz = ZoneInfo("UTC")
+                tz = get_tz(settings.get("timezone", "UTC"))
                 now = datetime.now(tz)
-                if today_str is None:
-                    today_str = f"{now.year}-{now.month:02d}-{now.day:02d}"
+                today_str = f"{now.year}-{now.month:02d}-{now.day:02d}"
                 current_time = f"{now.hour:02d}:{now.minute:02d}"
 
                 dr = settings.get("daily_rules", {})
-                if dr.get("enabled") and dr.get("time") == current_time:
-                    posted_key = last_posted.get(chat_id)
-                    if posted_key == today_str:
-                        continue
-                    is_premium = await db.is_premium_group(chat_id)
-                    if is_premium:
+                if not (dr.get("enabled") and dr.get("time") == current_time):
+                    continue
+                is_premium = await db.is_premium_group(chat_id)
+                if not is_premium:
+                    continue
+                if not await db.claim_daily_post(chat_id, "daily_rules", today_str):
+                    continue
+                try:
+                    text = dr.get("text", "Правила группы...")
+                    entities_json = dr.get("entities_json", "")
+                    prefix = "📋 Правила группы\n\n"
+                    full_text = prefix + text
+                    pu = len(prefix.encode('utf-16-le')) // 2
+                    entities = None
+                    if entities_json:
                         try:
-                            text = dr.get("text", "Правила группы...")
-                            entities_json = dr.get("entities_json", "")
-                            prefix = "📋 Правила группы\n\n"
-                            full_text = prefix + text
-                            pu = len(prefix.encode('utf-16-le')) // 2
+                            from aiogram.types import MessageEntity
+                            eds = json.loads(entities_json)
+                            entities = []
+                            for e in eds:
+                                kwargs = dict(
+                                    type=e["type"],
+                                    offset=e["offset"] + pu,
+                                    length=e["length"],
+                                )
+                                if "url" in e:
+                                    kwargs["url"] = e["url"]
+                                entities.append(MessageEntity(**kwargs))
+                        except Exception:
                             entities = None
-                            if entities_json:
-                                try:
-                                    from aiogram.types import MessageEntity
-                                    eds = json.loads(entities_json)
-                                    entities = []
-                                    for e in eds:
-                                        kwargs = dict(
-                                            type=e["type"],
-                                            offset=e["offset"] + pu,
-                                            length=e["length"],
-                                        )
-                                        if "url" in e:
-                                            kwargs["url"] = e["url"]
-                                        entities.append(MessageEntity(**kwargs))
-                                except Exception:
-                                    entities = None
-                            await bot.send_message(
-                                chat_id,
-                                full_text,
-                                entities=entities,
-                                parse_mode=None,
+                    await bot.send_message(
+                        chat_id,
+                        full_text,
+                        entities=entities,
+                        parse_mode=None,
+                    )
+                    logger.info(f"Daily rules posted to {chat_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to post daily rules to {chat_id}: {e}")
+                    try:
+                        async with aiosqlite.connect(db.db_path) as conn:
+                            await conn.execute(
+                                "DELETE FROM last_posts WHERE chat_id = ? AND post_type = ? AND day = ?",
+                                (chat_id, "daily_rules", today_str)
                             )
-                            last_posted[chat_id] = today_str
-                            logger.info(f"Daily rules posted to {chat_id}")
-                        except Exception as e:
-                            logger.warning(f"Failed to post daily rules to {chat_id}: {e}")
+                            await conn.commit()
+                    except Exception:
+                        pass
+
+            try:
+                await db.delete_old_posts()
+            except Exception as e:
+                logger.warning(f"Failed to cleanup last_posts: {e}")
 
             await asyncio.sleep(30)
         except Exception as e:

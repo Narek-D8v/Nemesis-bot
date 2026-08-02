@@ -2,6 +2,7 @@ import copy
 import json
 import time
 import logging
+from datetime import datetime, timezone, timedelta
 import aiosqlite
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,12 @@ class Database:
                 CREATE TABLE IF NOT EXISTS group_settings (
                     chat_id INTEGER PRIMARY KEY,
                     config TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE TABLE IF NOT EXISTS last_posts (
+                    chat_id INTEGER,
+                    post_type TEXT,
+                    day TEXT,
+                    PRIMARY KEY (chat_id, post_type, day)
                 );
                 CREATE TABLE IF NOT EXISTS logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -981,5 +988,28 @@ class Database:
             )
             row = await cursor.fetchone()
             return row[0] if row else None
+
+    async def claim_daily_post(self, chat_id: int, post_type: str, day: str) -> bool:
+        """Атомарно помечает, что пост post_type за день day уже отправлен в чат.
+        Возвращает True, если запись только что создана (пост можно отправлять),
+        и False, если пост за этот день уже был отправлен ранее."""
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "INSERT OR IGNORE INTO last_posts (chat_id, post_type, day) VALUES (?, ?, ?)",
+                (chat_id, post_type, day)
+            )
+            await conn.commit()
+            return cursor.rowcount > 0
+
+    async def delete_old_posts(self):
+        """Удаляет записи last_posts старше, чем keep_days дней назад."""
+        keep_days = 2
+        cutoff = datetime.now(timezone.utc).date() - timedelta(days=keep_days)
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "DELETE FROM last_posts WHERE day < ?",
+                (cutoff.isoformat(),)
+            )
+            await conn.commit()
 
 db = Database()
