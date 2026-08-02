@@ -1,4 +1,6 @@
 import asyncio
+import bisect
+import gzip
 import io
 import json
 import os
@@ -20,14 +22,162 @@ from utils.user_name import resolve_name_link
 def _city_wiki_link(city: str) -> str:
     return "https://ru.wikipedia.org/wiki/" + urllib.parse.quote(city.replace(" ", "_"))
 
+# ── База городов: cities.json (российский список) + cities500.txt (GeoNames, весь мир) ──
 _CITY_INDEX: dict[str, dict] = {}
+_CITY_KEYS: list[str] = []
+_CITY_ALTINDEX: dict[str, dict] = {}
+_CITY_ALTKEYS: list[str] = []
+
+_CYR_RE = re.compile(r'[А-Яа-яЁё]')
+_ALIAS_OK = re.compile(r'^[A-Za-zА-Яа-яЁё0-9\s\-\'\.\(\):]+$')
+_RUS_ALPHA = set("АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя")
+_RUS_EXTRA_OK = set(" -'().:")
+_RU_LAT = {'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
+           'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+           'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts',
+           'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'}
+
+
+def _is_russian_text(text: str) -> bool:
+    """True: слово написано русской кириллицей (без иноязычных букв — æ, є, і, ә и т.п.)."""
+    if not _CYR_RE.search(text):
+        return False
+    return all(ch in _RUS_ALPHA or ch in _RUS_EXTRA_OK for ch in text)
+
+
+def _translit_score(candidate: str, latin: str) -> int:
+    """Сколько букв кандидата (после транслитерации) совпадает с латинским названием."""
+    cand = ''
+    for ch in candidate.lower():
+        cand += _RU_LAT.get(ch, ch)
+    latin = latin.lower().replace('-', '').replace(' ', '')
+    cand = cand.replace('-', '').replace(' ', '')
+    return sum(1 for i in range(min(len(cand), len(latin))) if cand[i] == latin[i])
+
+
+_RU_CANONICAL = {
+    "moscow": "Москва",
+    "new york city": "Нью-Йорк",
+    "new york": "Нью-Йорк",
+    "saint petersburg": "Санкт-Петербург",
+    "st petersburg": "Санкт-Петербург",
+    "sankt-peterburg": "Санкт-Петербург",
+    "kiev": "Киев",
+    "kyiv": "Киев",
+    "yerevan": "Ереван",
+    "tokyo": "Токио",
+    "berlin": "Берлин",
+    "paris": "Париж",
+    "london": "Лондон",
+    "minsk": "Минск",
+    "baku": "Баку",
+    "tbilisi": "Тбилиси",
+    "hanoi": "Ханой",
+    "saigon": "Хошимин",
+    "washington": "Вашингтон",
+    "warsaw": "Варшава",
+    "prague": "Прага",
+    "vienna": "Вена",
+    "rome": "Рим",
+    "madrid": "Мадрид",
+    "peking": "Пекин",
+    "beijing": "Пекин",
+    "istanbul": "Стамбул",
+    "delhi": "Дели",
+    "cairo": "Каир",
+    "amsterdam": "Амстердам",
+}
+
+
+def _canonical_city_name(name: str, alternates: list[str], asciiname: str = "") -> str:
+    """Выбирает отображаемое название города: только русская кириллица,
+    внутри — по близости длины к латинскому имени и по транслитерации."""
+    name = name.strip()
+    if not name:
+        return name
+    if _is_russian_text(name):
+        return name
+    ru = [a.strip() for a in alternates if _is_russian_text(a.strip())]
+    if not ru:
+        cyr = [a.strip() for a in alternates if a.strip() and _CYR_RE.search(a.strip())]
+        ru = cyr
+    if not ru:
+        return name
+    latin = (asciiname or name).lower().replace("-", " ")
+    canonical = _RU_CANONICAL.get(latin)
+    if canonical and canonical in ru:
+        return canonical
+    ref_len = len(asciiname)
+    best_dist = min(abs(len(a) - ref_len) for a in ru)
+    closest = [a for a in ru if abs(len(a) - ref_len) == best_dist]
+    if len(closest) == 1:
+        return closest[0]
+    return min(closest, key=lambda a: (-_translit_score(a, latin), len(a)))
+
+
+def _add_city_alias(entry: dict, alias: str):
+    key = re.sub(r"\s+", " ", alias.strip().lower())
+    if not key or len(key) > 100:
+        return
+    if _ALIAS_OK.match(key):
+        _CITY_INDEX.setdefault(key, entry)
+    else:
+        _CITY_ALTINDEX.setdefault(key, entry)
+
+
+def _load_cities_geonames(path: str):
+    """Читает cities500.txt (GeoNames): геонейм — название + все алиасы (в т.ч. кириллица).
+    Если рядом лежит .gz-версия, читает из неё (компактнее для репозитория/бандла)."""
+    loaded = 0
+    gz_path = path + ".gz"
+    if os.path.exists(gz_path):
+        path = gz_path
+    _open = gzip.open if path.endswith(".gz") else open
+    with _open(path, "rt", encoding="utf-8") as f:
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) < 6:
+                continue
+            try:
+                geonameid = int(parts[0])
+            except ValueError:
+                continue
+            name = parts[1].strip()
+            asciiname = parts[2].strip()
+            alternates = [a.strip() for a in parts[3].split(",") if a.strip()]
+            if not name:
+                continue
+            display = _canonical_city_name(name, alternates, asciiname)
+            entry = {"id": geonameid, "name": display}
+            _add_city_alias(entry, name)
+            if asciiname and asciiname.lower() != name.lower():
+                _add_city_alias(entry, asciiname)
+            for alt in alternates:
+                if len(alt) > 80:
+                    continue
+                _add_city_alias(entry, alt)
+            loaded += 1
+    logger.info(f"Cities500 loaded: {loaded} cities from {os.path.basename(path)}")
+
+
+_cities_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cities.json")
 try:
-    _cities_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cities.json")
     with open(_cities_path, encoding="utf-8") as _f:
         for _c in json.load(_f):
             _CITY_INDEX[_c["name"].lower()] = _c
+    logger.info(f"Cities (legacy json) loaded: {len(_CITY_INDEX)} entries")
 except Exception as e:
     logger.warning(f"Cities database failed to load: {e}")
+
+_cities500_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cities500.txt")
+_cities500_gz = _cities500_path + ".gz"
+if os.path.exists(_cities500_path) or os.path.exists(_cities500_gz):
+    _load_cities_geonames(_cities500_path)
+else:
+    logger.warning("cities500.txt(.gz) not found, using only cities.json")
+
+_CITY_KEYS = sorted(_CITY_INDEX.keys())
+_CITY_ALTKEYS = sorted(_CITY_ALTINDEX.keys())
 
 ANKETA_CMD = re.compile(r'^(моя\s+)?анкета\b', re.IGNORECASE)
 TOGGLE_ANKETA = re.compile(r'^[+-]анкета\b', re.IGNORECASE)
@@ -129,10 +279,34 @@ def _resolve_city(raw: str):
     if key in _CITY_INDEX:
         c = _CITY_INDEX[key]
         return c["name"], c["id"]
-    matches = [c for name, c in _CITY_INDEX.items() if name.startswith(key)]
-    if len(matches) == 1:
-        c = matches[0]
+    # Префиксный поиск по отсортированным ключам (bi
+    lo = bisect.bisect_left(_CITY_KEYS, key)
+    hi = bisect.bisect_right(_CITY_KEYS, key + "\uffff")
+    candidates = []
+    for i in range(lo, hi):
+        if _CITY_KEYS[i].startswith(key):
+            candidates.append(_CITY_INDEX[_CITY_KEYS[i]])
+        if len(candidates) > 1:
+            break
+    if len(candidates) == 1:
+        c = candidates[0]
         return c["name"], c["id"]
+    # Не-латинские/некириллические названия (японский, арабский и т.п.)
+    if not _ALIAS_OK.match(key):
+        c = _CITY_ALTINDEX.get(key)
+        if c:
+            return c["name"], c["id"]
+        lo = bisect.bisect_left(_CITY_ALTKEYS, key)
+        hi = bisect.bisect_right(_CITY_ALTKEYS, key + "\uffff")
+        candidates = []
+        for i in range(lo, hi):
+            if _CITY_ALTKEYS[i].startswith(key):
+                candidates.append(_CITY_ALTINDEX[_CITY_ALTKEYS[i]])
+            if len(candidates) > 1:
+                break
+        if len(candidates) == 1:
+            c = candidates[0]
+            return c["name"], c["id"]
     return None
 
 
