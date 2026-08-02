@@ -993,13 +993,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
 
     mute_filter = settings.get("filter_mute", {})
     if mute_filter.get("enabled", True) and contains_mat(text):
-        if await is_admin(chat_id, user_id):
-            try:
-                await message.delete()
-                await db.add_log(chat_id, user_id, "delete", "Мат (админ/владелец)")
-            except Exception:
-                pass
-            return
+        is_adm = await is_admin(chat_id, user_id)
         if mute_filter.get("replace_with_stars", False):
             try:
                 await message.delete()
@@ -1022,11 +1016,18 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
                 warns = await db.get_active_warns(chat_id, user_id)
                 mat_warns = [w for w in warns if w[1] == "мат"]
                 if len(mat_warns) >= 2:
-                    await mute_user(chat_id, user_id, 10, "Мат (3+ предупреждения)")
+                    if is_adm:
+                        await apply_mute(chat_id, user_id, 10, "Мат (лимит предупреждений, админ/владелец)")
+                        await db.add_log(chat_id, user_id, "mute", "Мат (лимит предупреждений, админ/владелец)")
+                        await message.answer(
+                            f"🔇 {name_link(message.from_user.id, message.from_user.first_name)}, виртуальный мут 10 мин за мат (лимит предупреждений)."
+                        )
+                    else:
+                        await mute_user(chat_id, user_id, 10, "Мат (3+ предупреждения)")
+                        await message.answer(
+                            f"🔇 {name_link(message.from_user.id, message.from_user.first_name)}, мут 10 мин за мат."
+                        )
                     await db.clear_warns(chat_id, user_id)
-                    await message.answer(
-                        f"🔇 {name_link(message.from_user.id, message.from_user.first_name)}, мут 10 мин за мат."
-                    )
                 else:
                     await db.add_warn(chat_id, user_id, 0, "мат")
                     await db.add_log(chat_id, user_id, "warn", "мат")
