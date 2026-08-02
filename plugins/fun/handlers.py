@@ -314,8 +314,8 @@ async def handle_criminal_article(message: Message, chat_id: int, user_id: int, 
 
     async with aiosqlite.connect(db.db_path) as conn:
         cursor = await conn.execute(
-            "SELECT article_num, article_title, created_at FROM fun_criminal_record WHERE user_id = ? AND chat_id = ?",
-            (user_id, chat_id)
+            "SELECT article_num, article_title, created_at FROM fun_criminal_record WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
         )
         row = await cursor.fetchone()
 
@@ -330,8 +330,8 @@ async def handle_criminal_article(message: Message, chat_id: int, user_id: int, 
 
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
-            "INSERT OR REPLACE INTO fun_criminal_record (user_id, chat_id, article_num, article_title, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, chat_id, num, title, now)
+            "INSERT OR REPLACE INTO fun_criminal_record (user_id, article_num, article_title, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, num, title, now)
         )
         await conn.commit()
 
@@ -361,8 +361,8 @@ async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, se
 
     async with aiosqlite.connect(db.db_path) as conn:
         cursor = await conn.execute(
-            "SELECT sin_name, sin_desc, created_at FROM fun_sins_record WHERE user_id = ? AND chat_id = ?",
-            (user_id, chat_id)
+            "SELECT sin_name, sin_desc, created_at FROM fun_sins_record WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
         )
         row = await cursor.fetchone()
 
@@ -378,8 +378,8 @@ async def handle_sin(message: Message, chat_id: int, user_id: int, text: str, se
 
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
-            "INSERT OR REPLACE INTO fun_sins_record (user_id, chat_id, sin_name, sin_desc, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, chat_id, sin_name, sin_desc, now)
+            "INSERT OR REPLACE INTO fun_sins_record (user_id, sin_name, sin_desc, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, sin_name, sin_desc, now)
         )
         await conn.commit()
 
@@ -410,8 +410,8 @@ async def handle_addiction(message: Message, chat_id: int, user_id: int, text: s
 
     async with aiosqlite.connect(db.db_path) as conn:
         cursor = await conn.execute(
-            "SELECT addiction_name, addiction_desc, created_at FROM fun_addictions_record WHERE user_id = ? AND chat_id = ?",
-            (user_id, chat_id)
+            "SELECT addiction_name, addiction_desc, created_at FROM fun_addictions_record WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
         )
         row = await cursor.fetchone()
 
@@ -427,8 +427,8 @@ async def handle_addiction(message: Message, chat_id: int, user_id: int, text: s
 
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
-            "INSERT OR REPLACE INTO fun_addictions_record (user_id, chat_id, addiction_name, addiction_desc, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, chat_id, addiction_name, addiction_desc, now)
+            "INSERT OR REPLACE INTO fun_addictions_record (user_id, addiction_name, addiction_desc, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, addiction_name, addiction_desc, now)
         )
         await conn.commit()
 
@@ -459,8 +459,8 @@ async def handle_state(message: Message, chat_id: int, user_id: int, text: str, 
 
     async with aiosqlite.connect(db.db_path) as conn:
         cursor = await conn.execute(
-            "SELECT state_name, state_desc, created_at FROM fun_states_record WHERE user_id = ? AND chat_id = ?",
-            (user_id, chat_id)
+            "SELECT state_name, state_desc, created_at FROM fun_states_record WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
         )
         row = await cursor.fetchone()
 
@@ -476,8 +476,8 @@ async def handle_state(message: Message, chat_id: int, user_id: int, text: str, 
 
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
-            "INSERT OR REPLACE INTO fun_states_record (user_id, chat_id, state_name, state_desc, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, chat_id, state_name, state_desc, now)
+            "INSERT OR REPLACE INTO fun_states_record (user_id, state_name, state_desc, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, state_name, state_desc, now)
         )
         await conn.commit()
 
@@ -508,8 +508,8 @@ async def handle_philosophy(message: Message, chat_id: int, user_id: int, text: 
 
     async with aiosqlite.connect(db.db_path) as conn:
         cursor = await conn.execute(
-            "SELECT philosophy_name, philosophy_desc, created_at FROM fun_philosophies_record WHERE user_id = ? AND chat_id = ?",
-            (user_id, chat_id)
+            "SELECT philosophy_name, philosophy_desc, created_at FROM fun_philosophies_record WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
         )
         row = await cursor.fetchone()
 
@@ -525,8 +525,8 @@ async def handle_philosophy(message: Message, chat_id: int, user_id: int, text: 
 
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
-            "INSERT OR REPLACE INTO fun_philosophies_record (user_id, chat_id, philosophy_name, philosophy_desc, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user_id, chat_id, philosophy_name, philosophy_desc, now)
+            "INSERT OR REPLACE INTO fun_philosophies_record (user_id, philosophy_name, philosophy_desc, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, philosophy_name, philosophy_desc, now)
         )
         await conn.commit()
 
@@ -557,8 +557,8 @@ async def handle_soul(message: Message, chat_id: int, user_id: int, text: str, s
 
     async with aiosqlite.connect(db.db_path) as conn:
         cursor = await conn.execute(
-            "SELECT soul_name, soul_desc, soul_image, created_at FROM fun_souls_record WHERE user_id = ? AND chat_id = ?",
-            (user_id, chat_id)
+            "SELECT soul_name, soul_desc, soul_image, created_at FROM fun_souls_record WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
         )
         row = await cursor.fetchone()
 
@@ -577,8 +577,8 @@ async def handle_soul(message: Message, chat_id: int, user_id: int, text: str, s
 
     async with aiosqlite.connect(db.db_path) as conn:
         await conn.execute(
-            "INSERT OR REPLACE INTO fun_souls_record (user_id, chat_id, soul_name, soul_desc, soul_image, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user_id, chat_id, soul_name, soul_desc, soul_image, now)
+            "INSERT OR REPLACE INTO fun_souls_record (user_id, soul_name, soul_desc, soul_image, created_at) VALUES (?, ?, ?, ?, ?)",
+            (user_id, soul_name, soul_desc, soul_image, now)
         )
         await conn.commit()
 
