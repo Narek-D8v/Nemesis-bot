@@ -16,6 +16,7 @@ from .addictions_data import ADDICTIONS
 from .states_data import STATES
 from .philosophies_data import PHILOSOPHIES
 from .souls_data import SOULS
+from .warriors_data import WARRIORS
 
 SOULS_DIR = Path(__file__).resolve().parent / "assets" / "souls"
 
@@ -599,3 +600,52 @@ async def _send_soul(message: Message, image: str, caption: str):
     except Exception as e:
         from bot import logger
         logger.warning(f"Soul send failed: {e}")
+
+
+# === мой воин ===
+
+async def handle_warrior(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped != "мой воин":
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("⚔️ Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    now = int(time.time())
+    user_link = _get_user_link(message)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT warrior_name, warrior_desc, created_at FROM fun_warriors_record WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
+        )
+        row = await cursor.fetchone()
+
+        if row and (now - row[2]) < 43200:
+            await message.reply(
+                f"⚔️ {user_link} вы сегодня уже:\n"
+                f"<b>{row[0]}</b>\n"
+                f"<blockquote>{row[1]}</blockquote>"
+            )
+            return True
+
+    warrior_name, warrior_desc = random.choice(WARRIORS)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_warriors_record (user_id, warrior_name, warrior_desc, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, warrior_name, warrior_desc, now)
+        )
+        await conn.commit()
+
+    await message.reply(
+        f"⚔️ {user_link} вы сегодня:\n"
+        f"<b>{warrior_name}</b>\n"
+        f"<blockquote>{warrior_desc}</blockquote>"
+    )
+    return True

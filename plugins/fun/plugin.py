@@ -17,6 +17,7 @@ DAILY_COLUMNS = {
     "fun_states_record": ("state_name", "state_desc", "created_at"),
     "fun_philosophies_record": ("philosophy_name", "philosophy_desc", "created_at"),
     "fun_souls_record": ("soul_name", "soul_desc", "soul_image", "created_at"),
+    "fun_warriors_record": ("warrior_name", "warrior_desc", "created_at"),
 }
 
 
@@ -35,6 +36,7 @@ class FunPlugin(BasePlugin):
             handle_state,
             handle_philosophy,
             handle_soul,
+            handle_warrior,
         )
         register_hook("fun_shipping", handle_shipping)
         register_hook("fun_text_games", handle_text_games)
@@ -45,6 +47,7 @@ class FunPlugin(BasePlugin):
         register_hook("fun_state", handle_state)
         register_hook("fun_philosophy", handle_philosophy)
         register_hook("fun_soul", handle_soul)
+        register_hook("fun_warrior", handle_warrior)
         logger.info("Fun plugin loaded with hooks registered")
 
     async def on_unload(self):
@@ -57,6 +60,7 @@ class FunPlugin(BasePlugin):
         unregister_hook("fun_state")
         unregister_hook("fun_philosophy")
         unregister_hook("fun_soul")
+        unregister_hook("fun_warrior")
         logger.info("Fun plugin unloaded")
 
     async def _init_db(self):
@@ -110,6 +114,12 @@ class FunPlugin(BasePlugin):
                     soul_name TEXT,
                     soul_desc TEXT,
                     soul_image TEXT,
+                    created_at INTEGER
+                );
+                CREATE TABLE IF NOT EXISTS fun_warriors_record (
+                    user_id INTEGER PRIMARY KEY,
+                    warrior_name TEXT,
+                    warrior_desc TEXT,
                     created_at INTEGER
                 );
             """)
