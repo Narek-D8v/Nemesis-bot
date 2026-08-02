@@ -23,6 +23,7 @@ class FunPlugin(BasePlugin):
             handle_addiction,
             handle_state,
             handle_philosophy,
+            handle_soul,
         )
         register_hook("fun_shipping", handle_shipping)
         register_hook("fun_text_games", handle_text_games)
@@ -32,6 +33,7 @@ class FunPlugin(BasePlugin):
         register_hook("fun_addiction", handle_addiction)
         register_hook("fun_state", handle_state)
         register_hook("fun_philosophy", handle_philosophy)
+        register_hook("fun_soul", handle_soul)
         logger.info("Fun plugin loaded with hooks registered")
 
     async def on_unload(self):
@@ -43,6 +45,7 @@ class FunPlugin(BasePlugin):
         unregister_hook("fun_addiction")
         unregister_hook("fun_state")
         unregister_hook("fun_philosophy")
+        unregister_hook("fun_soul")
         logger.info("Fun plugin unloaded")
 
     async def _init_db(self):
@@ -98,6 +101,15 @@ class FunPlugin(BasePlugin):
                     chat_id INTEGER,
                     philosophy_name TEXT,
                     philosophy_desc TEXT,
+                    created_at INTEGER,
+                    PRIMARY KEY (user_id, chat_id)
+                );
+                CREATE TABLE IF NOT EXISTS fun_souls_record (
+                    user_id INTEGER,
+                    chat_id INTEGER,
+                    soul_name TEXT,
+                    soul_desc TEXT,
+                    soul_image TEXT,
                     created_at INTEGER,
                     PRIMARY KEY (user_id, chat_id)
                 );

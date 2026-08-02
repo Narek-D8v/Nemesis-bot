@@ -1,9 +1,10 @@
 import random
 import re
 import time
+from pathlib import Path
 
 import aiosqlite
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 
 from db import db
 from utils import esc, format_duration
@@ -14,6 +15,9 @@ from .sins_data import SINS
 from .addictions_data import ADDICTIONS
 from .states_data import STATES
 from .philosophies_data import PHILOSOPHIES
+from .souls_data import SOULS
+
+SOULS_DIR = Path(__file__).resolve().parent / "assets" / "souls"
 
 SHIP_CMD = re.compile(r'^шипперим\b', re.IGNORECASE)
 OPTOUT_CMD = re.compile(r'^[-+]\s*шип\s+меня\b', re.IGNORECASE)
@@ -532,3 +536,66 @@ async def handle_philosophy(message: Message, chat_id: int, user_id: int, text: 
         f"<blockquote>{philosophy_desc}</blockquote>"
     )
     return True
+
+
+# === моя душа ===
+
+async def handle_soul(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped != "моя душа":
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("💟 Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    now = int(time.time())
+    user_link = _get_user_link(message)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT soul_name, soul_desc, soul_image, created_at FROM fun_souls_record WHERE user_id = ? AND chat_id = ?",
+            (user_id, chat_id)
+        )
+        row = await cursor.fetchone()
+
+        if row and (now - row[3]) < 43200:
+            soul_name, soul_desc, soul_image = row[0], row[1], row[2]
+            await _send_soul(
+                message,
+                soul_image,
+                f"💟 {user_link} ваша душа на сегодня уже наполнена:\n"
+                f"<b>{soul_name}</b>\n"
+                f"<blockquote>{soul_desc}</blockquote>",
+            )
+            return True
+
+    soul_image, soul_name, soul_desc = random.choice(SOULS)
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_souls_record (user_id, chat_id, soul_name, soul_desc, soul_image, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, chat_id, soul_name, soul_desc, soul_image, now)
+        )
+        await conn.commit()
+
+    await _send_soul(
+        message,
+        soul_image,
+        f"💟 {user_link} ваша душа сегодня наполнена:\n"
+        f"<b>{soul_name}</b>\n"
+        f"<blockquote>{soul_desc}</blockquote>",
+    )
+    return True
+
+
+async def _send_soul(message: Message, image: str, caption: str):
+    try:
+        photo = FSInputFile(SOULS_DIR / image)
+        await message.answer_photo(photo, caption=caption)
+    except Exception as e:
+        from bot import logger
+        logger.warning(f"Soul send failed: {e}")
