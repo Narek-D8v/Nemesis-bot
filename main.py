@@ -8,7 +8,7 @@ from aiohttp import web
 
 from bot import bot, dp, logger
 from db import db
-from middlewares import AntiFloodMiddleware, NightModeMiddleware, ChatInitMiddleware
+from middlewares import AntiFloodMiddleware, MuteEnforcementMiddleware, NightModeMiddleware, ChatInitMiddleware
 from core.plugin_manager import PluginManager
 from utils import get_tz
 
@@ -106,6 +106,7 @@ async def on_startup(plugin_manager: PluginManager | None = None):
     else:
         logger.warning("ADMIN_ID is 0 — owner premium not activated. Set ADMIN_ID in .env")
 
+    dp.message.middleware(MuteEnforcementMiddleware())
     dp.message.middleware(ChatInitMiddleware())
     dp.message.middleware(AntiFloodMiddleware())
     dp.message.middleware(NightModeMiddleware())

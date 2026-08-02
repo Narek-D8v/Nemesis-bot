@@ -17,6 +17,41 @@ _init_cache: set = set()
 _INIT_CACHE_MAX = 10000
 
 
+class MuteEnforcementMiddleware(BaseMiddleware):
+    """Удаляет ЛЮБОЕ сообщение пользователя с активным мутом (в т.ч. виртуальным
+    для админа/владельца и ботов), независимо от типа контента — тексты, стикеры,
+    анимации, видео-заметки, гео, медиа и т.д."""
+
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any],
+    ) -> Any:
+        if not isinstance(event, Message):
+            return await handler(event, data)
+        if event.chat.type not in ("group", "supergroup"):
+            return await handler(event, data)
+        if event.from_user is None or event.sender_chat is not None:
+            return await handler(event, data)
+
+        user_id = event.from_user.id
+        chat_id = event.chat.id
+        try:
+            active = await db.get_active_mute(chat_id, user_id)
+        except Exception:
+            return await handler(event, data)
+        if not active:
+            return await handler(event, data)
+
+        try:
+            await event.delete()
+        except Exception as e:
+            logger.warning(f"MuteEnforcement delete failed for {user_id}: {e}")
+            return await handler(event, data)
+        return None
+
+
 class ChatInitMiddleware(BaseMiddleware):
     async def __call__(
         self,
