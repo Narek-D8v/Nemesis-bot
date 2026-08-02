@@ -42,9 +42,6 @@ router = Router()
 last_messages: OrderedDict = OrderedDict()
 _classifiers: dict[str, BayesClassifier] = {}
 
-_recent_msg_ids: dict[tuple[int, int], list[int]] = {}
-_RECENT_LIMIT = 50
-
 MUTE_PERMISSIONS = ChatPermissions(
     can_send_messages=False, can_send_media_messages=False,
     can_send_polls=False, can_send_other_messages=False,
@@ -78,36 +75,9 @@ async def is_blacklisted(chat_id: int, user_id: int, settings: dict) -> bool:
     return user_id in blacklist
 
 
-def remember_user_message(chat_id: int, user_id: int, message_id: int):
-    """Запоминает последние message_id пользователя, чтобы их можно было
-    удалить при выдаче мута (Telegram не отдаёт историю сообщений)."""
-    key = (chat_id, user_id)
-    lst = _recent_msg_ids.get(key, [])
-    lst.append(message_id)
-    if len(lst) > _RECENT_LIMIT:
-        lst = lst[-_RECENT_LIMIT:]
-    _recent_msg_ids[key] = lst
-
-
-async def delete_user_recent_messages(chat_id: int, user_id: int) -> int:
-    """Удаляет запомненные сообщения пользователя до выдачи мута."""
-    ids = _recent_msg_ids.pop((chat_id, user_id), [])
-    if not ids:
-        return 0
-    deleted = 0
-    for i in range(0, len(ids), 100):
-        batch = ids[i:i + 100]
-        try:
-            await bot.delete_messages(chat_id, batch)
-            deleted += len(batch)
-        except Exception as e:
-            logger.warning(f"Delete old messages failed for {user_id}: {e}")
-    return deleted
-
-
 async def apply_mute(chat_id: int, user_id: int, duration_minutes: int, reason: str,
                      moderator_id: int = 0) -> tuple[bool, bool]:
-    """Применяет мут и удаляет старые сообщения нарушителя.
+    """Применяет мут.
 
     Возвращает (applied, is_virtual):
       - applied=True, is_virtual=False — обычный мут (ограничение restrictChatMember);
@@ -123,7 +93,6 @@ async def apply_mute(chat_id: int, user_id: int, duration_minutes: int, reason: 
     else:
         expires_at = now + max(duration_minutes, 1) * 60
         until_date = expires_at
-    await delete_user_recent_messages(chat_id, user_id)
 
     if await is_admin(chat_id, user_id):
         await db.add_mute(chat_id, user_id, moderator_id, reason, expires_at)
@@ -155,6 +124,9 @@ async def _enforce_active_mute(message: Message, chat_id: int, user_id: int) -> 
     (админы/владельцы и боты, которых Telegram не даёт ограничить)."""
     active = await db.get_active_mute(chat_id, user_id)
     if not active:
+        return False
+    settings = await db.get_settings(chat_id)
+    if await is_whitelisted(chat_id, user_id, settings):
         return False
     try:
         await message.delete()
@@ -669,8 +641,6 @@ async def message_handler(message: Message):
     if not message.from_user.is_bot:
         await db.track_message(chat_id, user_id)
 
-    remember_user_message(chat_id, user_id, message.message_id)
-
     if await _enforce_active_mute(message, chat_id, user_id):
         return
 
@@ -757,8 +727,6 @@ async def file_no_caption_handler(message: Message):
 
     if not message.from_user.is_bot:
         await db.track_message(chat_id, user_id)
-
-    remember_user_message(chat_id, user_id, message.message_id)
 
     if await _enforce_active_mute(message, chat_id, user_id):
         return

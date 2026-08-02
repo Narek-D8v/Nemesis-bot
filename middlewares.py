@@ -43,6 +43,12 @@ class MuteEnforcementMiddleware(BaseMiddleware):
             return await handler(event, data)
         if not active:
             return await handler(event, data)
+        try:
+            settings = await db.get_settings(chat_id)
+            if user_id in settings.get("whitelist", []):
+                return await handler(event, data)
+        except Exception:
+            pass
 
         try:
             await event.delete()
