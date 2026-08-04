@@ -193,16 +193,91 @@ async def staff_list_handler(message: Message):
     chat_id = message.chat.id
     settings = await db.get_settings(chat_id)
     rank_names = settings.get("moderator_rank_names", {})
+
+    members: dict[int, int] = {}
+    names: dict[int, str] = {}
+
     mods = await db.get_moderators(chat_id)
-    if not mods:
-        await message.reply("Модераторы не назначены.")
+    for mid, rnk, _ab, _aa in mods:
+        members[mid] = rnk
+
+    try:
+        admins = await bot.get_chat_administrators(chat_id)
+        for a in admins:
+            uid = a.user.id
+            names[uid] = a.user.first_name or a.user.last_name or a.user.username or "?"
+            if uid not in members:
+                members[uid] = 5 if a.status == ChatMemberStatus.CREATOR else 0
+            elif a.status == ChatMemberStatus.CREATOR:
+                members[uid] = max(members[uid], 5)
+    except Exception as e:
+        logger.warning(f"staff_list get admins failed: {e}")
+
+    users = await db.list_chat_users(chat_id, limit=5000)
+    for (uid, first, last, username) in users:
+        names.setdefault(uid, first or last or username or "?")
+        members.setdefault(uid, 0)
+
+    if not members:
+        await message.reply("В чате пока никто не известен.")
         return
-    lines = ["👥 <b>Состав модерации:</b>\n"]
-    for mid, rnk, ab, aa in mods:
-        name = await resolve_name_link(chat_id, mid)
+
+    grouped: dict[int, list[int]] = {r: [] for r in range(6)}
+    for uid, rnk in members.items():
+        if rnk < 0 or rnk > 5:
+            rnk = 0
+        grouped[rnk].append(uid)
+
+    total = len(members)
+    ranked = total - len(grouped[0])
+    header = (
+        f"👥 <b>Состав чата</b>\n"
+        f"Всего участников: <b>{total}</b> • с рангами: <b>{ranked}</b>\n"
+    )
+
+    section_titles = {
+        5: "👑 Создатели",
+        4: "🛡 Администраторы",
+        3: "🛡 Администраторы",
+        2: "⚔️ Модераторы",
+        1: "⚔️ Модераторы",
+        0: "👤 Участники",
+    }
+
+    lines = [header]
+    for rnk in (5, 4, 3, 2, 1, 0):
+        uids = grouped.get(rnk, [])
+        if not uids:
+            continue
         rname = rank_names.get(str(rnk), RANK_NAMES.get(rnk, f"Ранг {rnk}"))
-        lines.append(f"• {name} — {rname}")
-    await message.reply("\n".join(lines))
+        lines.append(f"\n<b>{section_titles[rnk]} (ранг {rnk} — {rname}):</b>")
+        shown = 0
+        for uid in sorted(uids, key=lambda u: (names.get(u, "?").lower(), u)):
+            if rnk == 0 and shown >= 100:
+                lines.append(f"… и ещё {len(uids) - shown} участников")
+                break
+            nm = names.get(uid, "?")
+            lines.append(f"• <a href='tg://user?id={uid}'>{esc(nm)}</a>")
+            shown += 1
+
+    full = "\n".join(lines)
+
+    chunks = []
+    cur = ""
+    for line in full.split("\n"):
+        if cur and len(cur) + len(line) + 1 > 4000:
+            chunks.append(cur)
+            cur = line
+        else:
+            cur = (cur + "\n" if cur else "") + line
+    if cur:
+        chunks.append(cur)
+
+    for i, chunk in enumerate(chunks):
+        if i == 0:
+            await message.reply(chunk)
+        else:
+            await message.answer(chunk)
 
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), F.text, lambda msg: msg.text and re.match(r'^кто\s+назначил\b', msg.text.strip(), re.IGNORECASE))
