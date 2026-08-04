@@ -37,6 +37,7 @@ class FunPlugin(BasePlugin):
             handle_philosophy,
             handle_soul,
             handle_warrior,
+            handle_chat_regime,
         )
         register_hook("fun_shipping", handle_shipping)
         register_hook("fun_text_games", handle_text_games)
@@ -48,6 +49,7 @@ class FunPlugin(BasePlugin):
         register_hook("fun_philosophy", handle_philosophy)
         register_hook("fun_soul", handle_soul)
         register_hook("fun_warrior", handle_warrior)
+        register_hook("fun_chat_regime", handle_chat_regime)
         logger.info("Fun plugin loaded with hooks registered")
 
     async def on_unload(self):
@@ -61,6 +63,7 @@ class FunPlugin(BasePlugin):
         unregister_hook("fun_philosophy")
         unregister_hook("fun_soul")
         unregister_hook("fun_warrior")
+        unregister_hook("fun_chat_regime")
         logger.info("Fun plugin unloaded")
 
     async def _init_db(self):
@@ -135,6 +138,13 @@ class FunPlugin(BasePlugin):
                     warrior_desc TEXT,
                     created_at INTEGER,
                     PRIMARY KEY (chat_id, user_id)
+                );
+                CREATE TABLE IF NOT EXISTS fun_chat_regime (
+                    chat_id INTEGER PRIMARY KEY,
+                    regime_name TEXT,
+                    regime_desc TEXT,
+                    set_by INTEGER,
+                    created_at INTEGER
                 );
             """)
             await self._migrate_daily_tables(conn)

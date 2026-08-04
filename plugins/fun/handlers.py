@@ -17,6 +17,7 @@ from .states_data import STATES
 from .philosophies_data import PHILOSOPHIES
 from .souls_data import SOULS
 from .warriors_data import WARRIORS
+from .regimes_data import REGIMES
 
 SOULS_DIR = Path(__file__).resolve().parent / "assets" / "souls"
 
@@ -296,6 +297,14 @@ def _get_user_link(message: Message) -> str:
     user = message.from_user
     name = esc(user.first_name or "Пользователь")
     return f'<a href="tg://user?id={user.id}">{name}</a>'
+
+
+def _chat_name_link(message: Message) -> str:
+    title = esc(message.chat.title or "Чат")
+    username = getattr(message.chat, "username", None)
+    if username:
+        return f'<a href="https://t.me/{username}">{title}</a>'
+    return title
 
 
 async def handle_criminal_article(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
@@ -647,5 +656,62 @@ async def handle_warrior(message: Message, chat_id: int, user_id: int, text: str
         f"⚔️ {user_link} вы сегодня:\n"
         f"<b>{warrior_name}</b>\n"
         f"<blockquote>{warrior_desc}</blockquote>"
+    )
+    return True
+
+
+# === наш режим / наш строй ===
+
+async def handle_chat_regime(message: Message, chat_id: int, user_id: int, text: str, settings: dict) -> bool:
+    stripped = text.strip().lower()
+    if stripped not in ("наш режим", "наш строй"):
+        return False
+
+    if message.chat.type == "private":
+        await message.reply("⚖️ Эта команда работает только в группах!")
+        return True
+
+    if message.chat.type not in ("group", "supergroup"):
+        return False
+
+    async with aiosqlite.connect(db.db_path) as conn:
+        cursor = await conn.execute(
+            "SELECT regime_name, regime_desc FROM fun_chat_regime WHERE chat_id = ?",
+            (chat_id,)
+        )
+        row = await cursor.fetchone()
+
+        if row:
+            regime_name, regime_desc = row
+            user_link = _get_user_link(message)
+            await message.reply(
+                f"⚖️ {user_link}, форма правления этого чата:\n"
+                f"<b>{regime_name}</b>\n"
+                f"<blockquote>{regime_desc}</blockquote>"
+            )
+            return True
+
+        rank = await db.get_user_rank(chat_id, user_id) or 0
+        if rank < 5:
+            user_link = _get_user_link(message)
+            await message.reply(
+                f"⚖️ {user_link}, вы пока лишь сброд без закона и флага. "
+                f"Определить судьбу чата дано только обладателям ранга «Создатель»."
+            )
+            return True
+
+        regime_name, regime_desc = random.choice(REGIMES)
+
+        await conn.execute(
+            "INSERT OR REPLACE INTO fun_chat_regime (chat_id, regime_name, regime_desc, set_by, created_at) VALUES (?, ?, ?, ?, ?)",
+            (chat_id, regime_name, regime_desc, user_id, int(time.time()))
+        )
+        await conn.commit()
+
+    chat_name = _chat_name_link(message)
+    await message.reply(
+        f"⚖️ {chat_name}, ваша форма правления:\n"
+        f"<b>{regime_name}</b>\n"
+        f"<blockquote>{regime_desc}</blockquote>"
     )
     return True
