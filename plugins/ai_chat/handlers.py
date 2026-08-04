@@ -13,6 +13,7 @@ from aiogram.types import Message
 from bot import bot
 from config import OPENROUTER_API_KEY as API_KEY
 from db import db
+from handlers.admin.common import RANK_NAMES
 from handlers.messages import apply_mute, UNMUTE_PERMISSIONS
 from utils import esc, format_duration
 from utils.mentions import extract_user
@@ -63,6 +64,17 @@ SYSTEM_PROMPT = (
     "2. Отвечай по делу. Короткий вопрос — короткий ответ. Просят подробностей — объясни развёрнуто с примерами. Всегда заканчивай мысль.\n"
     "3. Форматирование ТОЛЬКО HTML: <b>жирный</b>, <i>курсив</i>, <code>код</code>. \n"
     "4. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО использовать Markdown (*, **, `, ```). Запрещены теги <br>, <p>, <div>. Не экранируй HTML.\n\n"
+    "ВЫПОЛНЕНИЕ ДЕЙСТВИЙ (FUNCTION CALLING):\n"
+    "Если пользователь просит замутить/размутить/выдать варн/забанить/разбанить/кикнуть кого-то "
+    "в этом чате — верни СТРОГО ОДИН JSON без какого-либо другого текста в формате: "
+    "{\"action\": \"mute|unmute|warn|ban|unban|kick\", \"target_name\": \"имя или @юзернейм цели\", "
+    "\"duration_minutes\": 120, \"reason\": \"причина\"}. "
+    "duration_minutes указывай целым числом минут и только для action mute/ban. "
+    "ВАЖНО — проверь ранг пользователя (блок «РАНГ ПОЛЬЗОВАТЕЛЯ») и требуемые ранги (блок «ТРЕБУЕМЫЕ РАНГИ»): "
+    "если ранг пользователя ниже требуемого — НЕ возвращай JSON, откажись обычным текстом и скажи, что прав недостаточно. "
+    "Также НЕ выполняй действие, если цель имеет ранг выше или равный рангу пользователя. "
+    "Действия выполняются ТОЛЬКО в текущем чате. Если просят наказать кого-то в другом чате или "
+    "действие вне списка — откажись обычным текстом.\n\n"
     "БАЗА ЗНАНИЙ (КАТАЛОГ КОМАНД NEMESIS BOT):\n"
     "Советуй пользователям команды в зависимости от их вопроса. Объясняй, какие параметры нужны.\n\n"
     "=== МОДЕРАЦИЯ (ранги 0-5) ===\n"
@@ -244,14 +256,6 @@ SYSTEM_PROMPT = (
     "+факт текст / !запомни текст — запомнить факт о себе\n"
     "мои факты — список своих фактов\n"
     "-факт N — удалить факт\n\n"
-    "=== ВЫПОЛНЕНИЕ ДЕЙСТВИЙ (FUNCTION CALLING) ===\n"
-    "Если пользователь просит замутить/размутить/выдать варн/забанить/разбанить/кикнуть кого-то "
-    "в этом чате — верни СТРОГО ОДИН JSON без какого-либо другого текста в формате: "
-    "{\"action\": \"mute|unmute|warn|ban|unban|kick\", \"target_name\": \"имя или @юзернейм цели\", "
-    "\"duration_minutes\": 120, \"reason\": \"причина\"}. "
-    "duration_minutes указывай целым числом минут и только для action mute/ban. "
-    "Действия выполняются ТОЛЬКО в текущем чате. Если просят наказать кого-то в другом чате или "
-    "действие вне списка — откажись обычным текстом.\n\n"
     "=== PREMIUM ===\n"
     "Premium-подписка даёт доступ к AI чату, повышенные лимиты (созыв до 120, макс. рейтинг и т.д.)\n"
 )
@@ -373,24 +377,45 @@ async def _get_chat_regime(chat_id: int) -> str | None:
 
 
 async def build_system_prompt(chat_id: int, user_id: int, settings: dict) -> str:
-    parts = [SYSTEM_PROMPT]
+    parts: list[str] = []
 
-    rules = (settings.get("rules") or {}).get("text") or ""
-    daily_rules = (settings.get("daily_rules") or {}).get("text") or ""
-    rules_text = "\n".join(x.strip() for x in (rules, daily_rules) if x and x.strip())
-    if rules_text:
-        parts.append("=== ПРАВИЛА ЧАТА ===\n" + rules_text[:2000])
+    rank = await db.get_user_rank(chat_id, user_id) or 0
+    rname = settings.get("moderator_rank_names", {}).get(str(rank), RANK_NAMES.get(rank, f"Ранг {rank}"))
+    parts.append(
+        f"=== РАНГ ПОЛЬЗОВАТЕЛЯ ===\n"
+        f"Текущий пользователь имеет ранг {rank} ({rname}). "
+        f"Ранг определяет, какие действия он может выполнять. "
+        f"Если ранг недостаточен для запрошенного действия — откажись текстом и объясни, что прав недостаточно."
+    )
+
+    req = {}
+    for act in ("warn", "mute", "unmute", "ban", "unban", "kick"):
+        req[act] = await db.get_command_restriction(chat_id, act)
+    req_line = ", ".join(f"{act}={r}" for act, r in req.items())
+    parts.append(
+        f"=== ТРЕБУЕМЫЕ РАНГИ ДЛЯ ДЕЙСТВИЙ ===\n"
+        f"Требуемые минимальные ранги в этом чате: {req_line}. "
+        f"Цель наказания не может иметь ранг выше или равный рангу пользователя (кроме создателя, ранг 5)."
+    )
+
+    parts.append(SYSTEM_PROMPT)
 
     regime = await _get_chat_regime(chat_id)
     if regime and regime in REGIME_PERSONAS:
         parts.append("=== ФОРМА ПРАВЛЕНИЯ (НАШ СТРОЙ) ===\n" + REGIME_PERSONAS[regime])
 
+    rules = (settings.get("rules") or {}).get("text") or ""
+    daily_rules = (settings.get("daily_rules") or {}).get("text") or ""
+    rules_text = "\n".join(x.strip() for x in (rules, daily_rules) if x and x.strip())
+    if rules_text:
+        parts.append("=== ПРАВИЛА ЧАТА ===\n" + rules_text[:1500])
+
     facts = await db.get_user_facts(chat_id, user_id, limit=5)
     if facts:
         facts_text = "\n".join(f"• {f[1]}" for f in facts)
-        parts.append("=== ФАКТЫ О ПОЛЬЗОВАТЕЛЕ ===\n" + facts_text[:1500])
+        parts.append("=== ФАКТЫ О ПОЛЬЗОВАТЕЛЕ ===\n" + facts_text[:1200])
 
-    return "\n\n".join(parts)[:8000]
+    return "\n\n".join(parts)[:12000]
 
 
 def _parse_action_json(answer: str) -> dict | None:
@@ -507,6 +532,15 @@ async def _execute_action(message: Message, chat_id: int, user_id: int, data: di
         return err
     if target_id == user_id:
         return "❌ Нельзя применить наказание к самому себе."
+
+    target_rank = await db.get_user_rank(chat_id, target_id) or 0
+    if requester_rank != 5 and target_rank >= requester_rank:
+        tname = await _target_display(chat_id, target_id)
+        return (
+            f"❌ Нельзя применить наказание к пользователю с рангом {target_rank} "
+            f"({RANK_NAMES.get(target_rank, '?')}) — твой ранг {requester_rank}. "
+            f"{tname} имеет равный или высший ранг."
+        )
 
     reason = str(data.get("reason") or data.get("reason_text") or "Нарушение").strip()[:200] or "Нарушение"
 
