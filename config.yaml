@@ -66,13 +66,16 @@ plugins:
 
   aichat:
     enabled: true
-    version: 1.0.0
+    version: 1.1.0
     settings:
-      model: "openrouter/free"
-      max_tokens: 200
+      model: "poolside/laguna-m.1:free"
+      max_tokens: 600
       cooldown_seconds: 5
       daily_limit: 20
       context_size: 20
+      function_calling: true
+      facts_enabled: true
+      itogi_enabled: true
 
   grouptools:
     enabled: true

@@ -42,9 +42,18 @@ async def extract_user(text: str, message: Message):
 
 async def cache_user_from_message(message: Message):
     user = message.from_user
-    if user and user.username:
-        from db import db
+    if not user:
+        return
+    from db import db
+    if user.username:
         await db.cache_username(message.chat.id, user.id, user.username.lower())
+    await db.cache_chat_user(
+        message.chat.id,
+        user.id,
+        user.first_name or "",
+        user.last_name or "",
+        (user.username or "").lower(),
+    )
 
 
 async def cache_user_from_member(chat_id: int, user_id: int, username: str | None):

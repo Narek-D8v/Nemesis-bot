@@ -126,6 +126,7 @@ class Database:
 
     async def init_db(self):
         async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("PRAGMA journal_mode=WAL;")
             await db.executescript("""
                 CREATE TABLE IF NOT EXISTS user_premium (
                     user_id INTEGER PRIMARY KEY,
@@ -329,6 +330,33 @@ class Database:
                     achievements_visible INTEGER DEFAULT 1,
                     registered_at INTEGER DEFAULT 0
                 );
+                CREATE TABLE IF NOT EXISTS chat_users (
+                    chat_id INTEGER,
+                    user_id INTEGER,
+                    first_name TEXT DEFAULT '',
+                    last_name TEXT DEFAULT '',
+                    username TEXT DEFAULT '',
+                    updated_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_chat_users_name ON chat_users (chat_id, first_name);
+                CREATE TABLE IF NOT EXISTS ai_chat_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    user_id INTEGER,
+                    user_name TEXT DEFAULT '',
+                    text TEXT,
+                    timestamp INTEGER
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_chat_log ON ai_chat_log (chat_id, timestamp);
+                CREATE TABLE IF NOT EXISTS ai_user_facts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    user_id INTEGER,
+                    fact TEXT,
+                    created_at INTEGER
+                );
+                CREATE INDEX IF NOT EXISTS idx_ai_user_facts ON ai_user_facts (chat_id, user_id);
             """)
             await db.commit()
             await self._migrate_captcha_answer(db)
@@ -1011,5 +1039,95 @@ class Database:
                 (cutoff.isoformat(),)
             )
             await conn.commit()
+
+    async def cache_chat_user(self, chat_id: int, user_id: int, first_name: str = "", last_name: str = "", username: str = ""):
+        now = int(time.time())
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """INSERT INTO chat_users (chat_id, user_id, first_name, last_name, username, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                       first_name = excluded.first_name,
+                       last_name = excluded.last_name,
+                       username = excluded.username,
+                       updated_at = excluded.updated_at""",
+                (chat_id, user_id, first_name or "", last_name or "", username or "", now)
+            )
+            await conn.commit()
+
+    async def get_chat_user(self, chat_id: int, user_id: int) -> tuple | None:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT user_id, first_name, last_name, username FROM chat_users WHERE chat_id = ? AND user_id = ?",
+                (chat_id, user_id)
+            )
+            return await cursor.fetchone()
+
+    async def list_chat_users(self, chat_id: int, limit: int = 2000) -> list:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT user_id, first_name, last_name, username FROM chat_users WHERE chat_id = ? LIMIT ?",
+                (chat_id, limit)
+            )
+            return await cursor.fetchall()
+
+    async def add_ai_message(self, chat_id: int, user_id: int, user_name: str, text: str):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "INSERT INTO ai_chat_log (chat_id, user_id, user_name, text, timestamp) VALUES (?, ?, ?, ?, ?)",
+                (chat_id, user_id, user_name or "", text or "", int(time.time()))
+            )
+            await conn.commit()
+
+    async def get_recent_messages(self, chat_id: int, limit: int = 250) -> list:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT user_name, text, timestamp FROM ai_chat_log WHERE chat_id = ? ORDER BY timestamp DESC LIMIT ?",
+                (chat_id, limit)
+            )
+            return list(reversed(await cursor.fetchall()))
+
+    async def delete_old_ai_messages(self, before_ts: int) -> int:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "DELETE FROM ai_chat_log WHERE timestamp < ?",
+                (before_ts,)
+            )
+            await conn.commit()
+            return cursor.rowcount
+
+    async def add_user_fact(self, chat_id: int, user_id: int, fact: str):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                "INSERT INTO ai_user_facts (chat_id, user_id, fact, created_at) VALUES (?, ?, ?, ?)",
+                (chat_id, user_id, fact, int(time.time()))
+            )
+            await conn.commit()
+
+    async def get_user_facts(self, chat_id: int, user_id: int, limit: int = 20) -> list:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT id, fact, created_at FROM ai_user_facts WHERE chat_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT ?",
+                (chat_id, user_id, limit)
+            )
+            return await cursor.fetchall()
+
+    async def remove_user_fact(self, fact_id: int) -> bool:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "DELETE FROM ai_user_facts WHERE id = ?",
+                (fact_id,)
+            )
+            await conn.commit()
+            return cursor.rowcount > 0
+
+    async def get_ai_fact_count(self, chat_id: int, user_id: int) -> int:
+        async with aiosqlite.connect(self.db_path) as conn:
+            cursor = await conn.execute(
+                "SELECT COUNT(*) FROM ai_user_facts WHERE chat_id = ? AND user_id = ?",
+                (chat_id, user_id)
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else 0
 
 db = Database()

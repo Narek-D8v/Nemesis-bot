@@ -8,3 +8,5 @@ Pillow>=10.0.0
 numpy>=1.24.0
 matplotlib>=3.8.0
 imageio-ffmpeg>=0.4.9
+thefuzz>=0.20.0
+python-Levenshtein>=0.25.0
