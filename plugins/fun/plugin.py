@@ -8,8 +8,8 @@ from db import db
 
 logger = logging.getLogger(__name__)
 
-# Ежедневные «карточки» хранятся по пользователю (user_id), а не по чату:
-# cooldown действует глобально, и команду нельзя «переиспользовать» в других группах.
+# Ежедневные «карточки» хранятся по (chat_id, user_id):
+# cooldown действует отдельно в каждом чате — у пользователя своя карточка на каждый чат.
 DAILY_COLUMNS = {
     "fun_criminal_record": ("article_num", "article_title", "created_at"),
     "fun_sins_record": ("sin_name", "sin_desc", "created_at"),
@@ -80,78 +80,92 @@ class FunPlugin(BasePlugin):
                     PRIMARY KEY (chat_id, user_id)
                 );
                 CREATE TABLE IF NOT EXISTS fun_criminal_record (
-                    user_id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    user_id INTEGER,
                     article_num TEXT,
                     article_title TEXT,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
                 );
                 CREATE TABLE IF NOT EXISTS fun_sins_record (
-                    user_id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    user_id INTEGER,
                     sin_name TEXT,
                     sin_desc TEXT,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
                 );
                 CREATE TABLE IF NOT EXISTS fun_addictions_record (
-                    user_id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    user_id INTEGER,
                     addiction_name TEXT,
                     addiction_desc TEXT,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
                 );
                 CREATE TABLE IF NOT EXISTS fun_states_record (
-                    user_id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    user_id INTEGER,
                     state_name TEXT,
                     state_desc TEXT,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
                 );
                 CREATE TABLE IF NOT EXISTS fun_philosophies_record (
-                    user_id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    user_id INTEGER,
                     philosophy_name TEXT,
                     philosophy_desc TEXT,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
                 );
                 CREATE TABLE IF NOT EXISTS fun_souls_record (
-                    user_id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    user_id INTEGER,
                     soul_name TEXT,
                     soul_desc TEXT,
                     soul_image TEXT,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
                 );
                 CREATE TABLE IF NOT EXISTS fun_warriors_record (
-                    user_id INTEGER PRIMARY KEY,
+                    chat_id INTEGER,
+                    user_id INTEGER,
                     warrior_name TEXT,
                     warrior_desc TEXT,
-                    created_at INTEGER
+                    created_at INTEGER,
+                    PRIMARY KEY (chat_id, user_id)
                 );
             """)
             await self._migrate_daily_tables(conn)
             await conn.commit()
-            logger.info("Fun plugin tables ensured (daily records keyed by user_id)")
+            logger.info("Fun plugin tables ensured (daily records keyed by chat_id + user_id)")
 
     @staticmethod
     async def _migrate_daily_tables(conn):
-        """Приводит ежедневные таблицы к схеме «user_id PRIMARY KEY».
+        """Приводит ежедневные таблицы к схеме «(chat_id, user_id) PRIMARY KEY».
 
-        Старые БД, где ежедневные записи хранились по (user_id, chat_id),
-        автоматически пересобираются: на каждого пользователя остаётся
-        последняя запись. Если таблицы нет (например, fun_souls_record) — создаётся.
+        Кулдаун действует отдельно в каждом чате: у пользователя своя карточка
+        (воин/душа/грех и т.д.) на каждый чат. Если таблицы нет — создаётся.
+        Старые таблицы без chat_id пересоздаются с chat_id.
         """
         for table, cols in DAILY_COLUMNS.items():
             cur = await conn.execute(f"PRAGMA table_info({table})")
             existing = {r[1] for r in await cur.fetchall()}
             if not existing:
                 cols_sql = ", ".join(f"{c} TEXT" for c in cols)
-                await conn.execute(f"CREATE TABLE {table} (user_id INTEGER PRIMARY KEY, {cols_sql})")
+                await conn.execute(f"CREATE TABLE {table} (chat_id INTEGER, user_id INTEGER, {cols_sql}, PRIMARY KEY (chat_id, user_id))")
                 continue
-            if "chat_id" not in existing:
+            if "chat_id" in existing and "user_id" in existing:
                 continue  # уже новая схема
 
             await conn.execute(f"ALTER TABLE {table} RENAME TO {table}_old")
             cols_sql = ", ".join(f"{c} TEXT" for c in cols)
-            await conn.execute(f"CREATE TABLE {table} (user_id INTEGER PRIMARY KEY, {cols_sql})")
+            await conn.execute(f"CREATE TABLE {table} (chat_id INTEGER, user_id INTEGER, {cols_sql}, PRIMARY KEY (chat_id, user_id))")
             if "user_id" in existing and "created_at" in existing:
                 cols_sel = ", ".join(f"MAX({c})" for c in cols)
                 await conn.execute(
-                    f"INSERT INTO {table} (user_id, {', '.join(cols)}) "
-                    f"SELECT user_id, {cols_sel} FROM {table}_old GROUP BY user_id"
+                    f"INSERT INTO {table} (chat_id, user_id, {', '.join(cols)}) "
+                    f"SELECT 0, user_id, {cols_sel} FROM {table}_old GROUP BY user_id"
                 )
             await conn.execute(f"DROP TABLE IF EXISTS {table}_old")
