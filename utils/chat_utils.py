@@ -3,6 +3,7 @@ import asyncio
 
 from bot import bot, logger
 from handlers.messages import is_admin
+from utils import get_seen_message_ids
 
 
 async def delete_messages(chat_id: int, message_ids: list, silent: bool = False) -> int:
@@ -19,12 +20,13 @@ async def delete_messages(chat_id: int, message_ids: list, silent: bool = False)
 
 
 async def get_messages_above(chat_id: int, from_msg_id: int, limit: int) -> list:
-    return list(range(max(1, from_msg_id - limit), from_msg_id))
+    seen = [m for m in get_seen_message_ids(chat_id) if m < from_msg_id]
+    return seen[-limit:]
 
 
 async def get_messages_below(chat_id: int, from_msg_id: int, limit: int = None) -> list:
-    count = limit or 100
-    return list(range(from_msg_id + 1, from_msg_id + 1 + count))
+    seen = [m for m in get_seen_message_ids(chat_id) if m > from_msg_id]
+    return seen[:limit] if limit is not None else seen
 
 
 async def kick_user(chat_id: int, user_id: int, reason: str = ""):

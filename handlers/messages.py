@@ -24,7 +24,7 @@ from utils import (
     has_url, has_invite_link, has_mention_all, contains_mat,
     replace_mat, has_mask, is_account_old_enough,
     has_bot_command, esc, extract_all_urls, name_link,
-    normalize_tz_input,
+    normalize_tz_input, track_seen_message,
 )
 from utils.time_parser import PERMANENT
 from utils.ad_detector import is_short_ad_message, check_url_frequency, has_invite_wide
@@ -637,6 +637,7 @@ async def message_handler(message: Message):
     text = message.text or message.caption or ""
 
     await cache_user_from_message(message)
+    track_seen_message(chat_id, message.message_id)
 
     if not message.from_user.is_bot:
         await db.track_message(chat_id, user_id)
@@ -717,13 +718,14 @@ async def message_handler(message: Message):
 
 @router.message(F.chat.type.in_({"group", "supergroup"}), (F.document | F.photo | F.video | F.audio | F.voice), ~F.caption)
 async def file_no_caption_handler(message: Message):
-    if message.from_user is None or message.from_user.is_bot:
+    if message.from_user is None:
         return
     chat_id = message.chat.id
     user_id = message.from_user.id
     text = message.text or message.caption or ""
 
     await cache_user_from_message(message)
+    track_seen_message(chat_id, message.message_id)
 
     if not message.from_user.is_bot:
         await db.track_message(chat_id, user_id)
@@ -800,8 +802,6 @@ async def file_no_caption_handler(message: Message):
 
 
 async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text: str, settings: dict):
-    if message.from_user.is_bot:
-        return
     if await is_whitelisted(chat_id, user_id, settings):
         return
 
@@ -881,8 +881,9 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
     async def handle_link_violation(link_type: str, ban_on_sight: bool = False):
         action = settings.get("filter_links", {}).get("action", "delete")
         try:
-            await message.delete()
-            await db.add_log(chat_id, user_id, "delete", link_type)
+            if action == "delete" or ban_on_sight:
+                await message.delete()
+                await db.add_log(chat_id, user_id, "delete", link_type)
             if ban_on_sight:
                 await ban_user(chat_id, user_id, link_type)
                 logger.info(f"Auto-ban for {link_type} by {user_id} in {chat_id}")
@@ -923,7 +924,7 @@ async def _moderate_pipeline(message: Message, chat_id: int, user_id: int, text:
                     pass
                 return
 
-    if all_urls and is_short_ad_message(text):
+    if settings.get("filter_links", {}).get("enabled", True) and all_urls and is_short_ad_message(text, urls=all_urls):
         for url in all_urls:
             ad_attack = await check_url_frequency(url, chat_id, user_id)
             if ad_attack:

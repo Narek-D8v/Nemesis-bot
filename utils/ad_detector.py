@@ -42,11 +42,11 @@ def has_invite_wide(text: str) -> bool:
     return bool(INVITE_PATTERN_WIDE.search(text))
 
 
-def is_short_ad_message(text: str) -> bool:
+def is_short_ad_message(text: str, urls: list | None = None) -> bool:
     if not text:
         return False
     text_lower = text.lower().strip()
-    if not has_url(text):
+    if not has_url(text) and not urls:
         return False
     word_count = len(text_lower.split())
     if word_count > 20:

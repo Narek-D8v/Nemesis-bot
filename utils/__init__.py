@@ -68,6 +68,20 @@ def extract_all_urls(message: Message) -> list[str]:
     return list(urls)
 
 
+_seen_message_ids: dict[int, list[int]] = {}
+
+
+def track_seen_message(chat_id: int, message_id: int):
+    lst = _seen_message_ids.setdefault(chat_id, [])
+    lst.append(message_id)
+    if len(lst) > 5000:
+        del lst[:-2000]
+
+
+def get_seen_message_ids(chat_id: int) -> list[int]:
+    return _seen_message_ids.get(chat_id, [])
+
+
 def has_mention_all(text: str) -> bool:
     return bool(MENTION_ALL_PATTERN.search(text))
 
