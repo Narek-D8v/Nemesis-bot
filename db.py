@@ -544,6 +544,16 @@ class Database:
             )
             await conn.commit()
 
+    async def set_online_status(self, chat_id: int, user_id: int, is_online: bool):
+        async with aiosqlite.connect(self.db_path) as conn:
+            await conn.execute(
+                """INSERT INTO moderators (chat_id, user_id, rank, is_online)
+                   VALUES (?, ?, 0, ?)
+                   ON CONFLICT(chat_id, user_id) DO UPDATE SET is_online = excluded.is_online""",
+                (chat_id, user_id, int(is_online))
+            )
+            await conn.commit()
+
     async def remove_moderator(self, chat_id: int, user_id: int):
         async with aiosqlite.connect(self.db_path) as conn:
             await conn.execute(
